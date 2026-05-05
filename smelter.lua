@@ -1,5 +1,5 @@
 -- Peripherals from your setup in image_cbdbb2.png
-local chest = peripheral.wrap("minecraft:chest_0")
+local chest = peripheral.wrap("sophisticatedstorage:chest_0")
 local furnaces = {
     peripheral.wrap("minecraft:furnace_1"),
     peripheral.wrap("minecraft:furnace_2")

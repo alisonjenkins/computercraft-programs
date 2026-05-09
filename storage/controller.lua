@@ -62,6 +62,35 @@ local function safePush(from, toName, fromSlot, count)
     return moved or 0
 end
 
+-- The Advanced Peripherals chat_box rate-limits per source — if you fire 10
+-- sends back-to-back the back end silently drops most of them. Bundle short
+-- lines into ≤200-char chunks and sleep between sends.
+local CHUNK_MAX = 200
+local CHAT_GAP_S = 1.1
+
+local function chunkLines(lines)
+    local out, cur = {}, ""
+    for _, l in ipairs(lines) do
+        if #cur == 0 then
+            cur = l
+        elseif #cur + 3 + #l > CHUNK_MAX then
+            out[#out + 1] = cur ; cur = l
+        else
+            cur = cur .. " | " .. l
+        end
+    end
+    if #cur > 0 then out[#out + 1] = cur end
+    return out
+end
+
+local function sendLines(chat, user, lines)
+    local chunks = chunkLines(lines)
+    for i, ch in ipairs(chunks) do
+        pcall(chat.sendMessageToPlayer, ch, user, "storage")
+        if i < #chunks then sleep(CHAT_GAP_S) end
+    end
+end
+
 local function delivered(chat, user, name, count, total)
     if total > 0 then
         chat.sendMessageToPlayer(("delivered %d × %s"):format(count, name), user, "storage")
@@ -98,25 +127,28 @@ end
 local function handleFind(chat, idx, args, user)
     local query = args[1]
     if not query then
-        chat.sendMessageToPlayer("usage: !find <name>", user, "storage") ; return
+        sendLines(chat, user, { "usage: !find <name>" }) ; return
     end
     local matches = index.matchNames(idx, query)
     local lines = {}
     for name, entry in pairs(matches) do
-        lines[#lines + 1] = ("%s: %d (%d locs)"):format(name, entry.total, #entry.locations)
-        if #lines >= 5 then break end
+        lines[#lines + 1] = ("%s: %d (%d)"):format(name, entry.total, #entry.locations)
+        if #lines >= 20 then break end
     end
     if #lines == 0 then lines[1] = ("no match for %q"):format(query) end
-    for _, l in ipairs(lines) do chat.sendMessageToPlayer(l, user, "storage") end
+    sendLines(chat, user, lines)
 end
 
 local function handleList(chat, idx, args, user)
     local prefix = args[1]
-    local rows = index.topByCount(idx, 10, prefix)
-    if #rows == 0 then chat.sendMessageToPlayer("(empty)", user, "storage") ; return end
+    local limit  = tonumber(args[2]) or 20
+    local rows = index.topByCount(idx, limit, prefix)
+    if #rows == 0 then sendLines(chat, user, { "(empty)" }) ; return end
+    local lines = {}
     for _, r in ipairs(rows) do
-        chat.sendMessageToPlayer(("%s: %d"):format(r.name, r.count), user, "storage")
+        lines[#lines + 1] = ("%s: %d"):format(r.name, r.count)
     end
+    sendLines(chat, user, lines)
 end
 
 local function isAuthed(user)
@@ -155,11 +187,9 @@ local function chatLoop(state)
                 elseif cmd == "reindex" then
                     state.invs = discoverStorageInventories()
                     state.idx  = index.build(state.invs)
-                    state.chat.sendMessageToPlayer("reindexed", user, "storage")
+                    sendLines(state.chat, user, { "reindexed" })
                 elseif cmd == "help" then
-                    for _, l in ipairs(commands.help()) do
-                        state.chat.sendMessageToPlayer(l, user, "storage")
-                    end
+                    sendLines(state.chat, user, commands.help())
                 end
             end
         elseif ev[1] == "timer" and ev[2] == reindexAt then

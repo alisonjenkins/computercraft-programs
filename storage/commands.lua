@@ -16,11 +16,11 @@ end
 
 function M.help()
     return {
-        "!list [prefix]     - top items by count",
-        "!find <name>       - locate an item",
-        "!give <name> <n>   - deliver n of name",
-        "!reindex           - force full rescan",
-        "!help              - this message",
+        "!list [prefix] [n]  - top n items by count (default 20)",
+        "!find <name>        - locate items (up to 20)",
+        "!give <name> <n>    - deliver n of name",
+        "!reindex            - force full rescan",
+        "!help               - this message",
     }
 end
 

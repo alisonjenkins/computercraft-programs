@@ -20,10 +20,14 @@ local CONFIG = {
 }
 
 local function loadSettings()
-    if settings.load("/.storage_settings") then
-        local v = settings.get("delivery_chest")
-        if v then CONFIG.delivery_chest = v end
-    end
+    settings.define("delivery_chest", {
+        description = "Network name of the chest items are pushed to on !give",
+        type        = "string",
+    })
+    -- CC:T loads /.settings by default; the shell `set` command saves there too.
+    settings.load()
+    local v = settings.get("delivery_chest")
+    if v and v ~= "" then CONFIG.delivery_chest = v end
 end
 
 local function discoverInventories()
@@ -101,7 +105,7 @@ end
 local function run()
     loadSettings()
     assert(CONFIG.delivery_chest,
-        "set CONFIG.delivery_chest in storage/controller.lua or via settings")
+        "delivery chest unset. Run in shell: set delivery_chest <chest_name>")
 
     local chat = peripheral.find("chat_box")
     assert(chat, "no chat_box found on the network")

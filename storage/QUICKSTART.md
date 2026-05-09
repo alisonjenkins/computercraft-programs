@@ -107,19 +107,15 @@ Connected peripherals:
 
 Pick one of the chest names as the delivery chest — the one closest to where you'll stand. Note its exact name (e.g. `sophisticatedstorage:chest_3`).
 
-Tell the program. Two ways:
+Tell the program — easiest path is the CC:T shell `set` command:
 
 ```
-# (A) via shell, using CC:T's settings API:
 set delivery_chest sophisticatedstorage:chest_3
-set save /.storage_settings  # then call settings.save in-game
 ```
 
-Cleaner: edit `storage/controller.lua` line 16 directly:
+`set` writes to `/.settings` automatically; the controller reads that on startup. To check: `set delivery_chest` (with no value) prints the current value.
 
-```lua
-delivery_chest = "sophisticatedstorage:chest_3",
-```
+Alternative: edit `storage/controller.lua` `CONFIG.delivery_chest` directly. Useful if you don't want a settings file, but means a re-edit on every code refresh.
 
 ## Phase 5 — install the program files
 

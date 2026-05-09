@@ -53,6 +53,15 @@ local function discoverStorageInventories()
     return out
 end
 
+-- pushItems errors (instead of returning 0) when the target peripheral name
+-- doesn't resolve. That's noisy when chests come and go on the network, so
+-- swallow the error and let the caller move on.
+local function safePush(from, toName, fromSlot, count)
+    local ok, moved = pcall(from.pushItems, toName, fromSlot, count)
+    if not ok then return 0, moved end
+    return moved or 0
+end
+
 local function delivered(chat, user, name, count, total)
     if total > 0 then
         chat.sendMessageToPlayer(("delivered %d × %s"):format(count, name), user, "storage")
@@ -76,8 +85,9 @@ local function handleGive(chat, idx, args, user)
             if total >= count then break end
             local from = peripheral.wrap(loc.chest)
             if from then
-                local moved = from.pushItems(CONFIG.delivery_chest, loc.slot, count - total)
+                local moved, err = safePush(from, CONFIG.delivery_chest, loc.slot, count - total)
                 total = total + moved
+                if err then log_lib.warn("push from %s: %s", loc.chest, tostring(err)) end
             end
         end
         if total > 0 then delivered(chat, user, name, total, total) ; break end
@@ -123,7 +133,7 @@ local function ingestOnce(invs)
         local remaining = item.count
         for _, target in ipairs(invs) do
             if remaining <= 0 then break end
-            local moved = input.pushItems(target.name, slot, remaining)
+            local moved = safePush(input, target.name, slot, remaining)
             remaining = remaining - moved
             total_moved = total_moved + moved
         end
@@ -156,6 +166,10 @@ local function chatLoop(state)
             state.invs = discoverStorageInventories()
             state.idx  = index.build(state.invs)
             reindexAt = os.startTimer(CONFIG.reindex_period_s)
+        elseif ev[1] == "peripheral" or ev[1] == "peripheral_detach" then
+            log_lib.info("network change (%s %s) — reindexing", ev[1], tostring(ev[2]))
+            state.invs = discoverStorageInventories()
+            state.idx  = index.build(state.invs)
         end
     end
 end

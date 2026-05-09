@@ -98,14 +98,16 @@ If the turtle lost track of position (broken mid-move, world rollback), do **NOT
 Sinks a 1×1 ladder shaft straight down. Useful for getting a turtle (or yourself) down to Y=-58 efficiently.
 
 ```
-mining/digdown.lua <depth> [--no-ladders]
+mining/digdown.lua <depth> [--no-ladders] [--seal-water]
 ```
 
 - `<depth>` = blocks to descend. From surface Y=64 to Y=-58 → **depth = 122**.
 - Default places one ladder per descent step (via `turtle.placeUp` into the cell the turtle just vacated). Vanilla auto-attaches the ladder to one of the four surrounding stone walls.
 - `--no-ladders` skips ladder placement (just digs the shaft).
+- `--seal-water` also plugs water on the side walls (off by default — water doesn't damage the turtle, but plugging keeps the shaft dry and reliable for ladders).
+- **Lava-aware (always on):** if `inspectDown` finds lava, places a plug block (cobble / stone / dirt / gravel / deepslate / etc.) to replace it before digging. After each descent, checks all four side walls and plugs any lava found. Without a plug block in inventory the turtle stops rather than diving into lava.
 - Mid-descent refuels from any burnable item in inventory.
-- Pre-flight: stack of ladders in inventory + fuel. From the storage system: `!give ladder 128` (or craft from sticks).
+- Pre-flight: stack of ladders + ~1 stack of plug blocks (any cheap stone) + fuel. From the storage system: `!give ladder 128` and `!give cobblestone 64`.
 - Open-air sections (e.g. starting on a hill with no walls) → ladder placement fails for those blocks. Walk back up + manually fill the gap, or run the program from a 1×1 starter hole.
 
 After it finishes, the turtle is at the bottom. Move it into your branch-mine starter chamber (carve a 3×3 room around the bottom of the shaft), set up the dump+fuel chests, then run `mining/miner.lua 64 8 --start`.

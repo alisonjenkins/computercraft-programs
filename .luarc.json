@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/sumneko/vscode-lua/master/setting/schema.json",
+  "runtime.version": "Lua 5.1",
+  "diagnostics.globals": [
+    "peripheral", "rednet", "redstone", "term", "fs", "shell", "settings",
+    "textutils", "parallel", "colors", "colours", "keys", "vector",
+    "os", "http", "gps", "io", "help", "disk", "paintutils", "window",
+    "multishell", "pocket", "commands",
+    "sleep", "read", "write", "print", "printError", "tostring", "tonumber",
+    "turtle"
+  ],
+  "workspace.library": []
+}

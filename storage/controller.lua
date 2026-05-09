@@ -100,14 +100,26 @@ local function delivered(chat, user, name, count, total)
 end
 
 local function handleGive(chat, idx, args, user)
-    local query = args[1]
-    local count = tonumber(args[2] or "1")
-    if not query or not count then
-        chat.sendMessageToPlayer("usage: !give <name> <count>", user, "storage")
+    -- Last arg is the count if numeric; everything before it is the query.
+    local count = 1
+    local queryTokens = {}
+    if #args >= 1 then
+        local tail = tonumber(args[#args])
+        if tail then
+            count = tail
+            for i = 1, #args - 1 do queryTokens[#queryTokens + 1] = args[i] end
+        else
+            for i = 1, #args do queryTokens[#queryTokens + 1] = args[i] end
+        end
+    end
+    if #queryTokens == 0 then
+        sendLines(chat, user, { "usage: !give <name...> [count]" })
         return
     end
-    local matches = index.matchNames(idx, query)
+
+    local matches = index.matchNames(idx, queryTokens)
     local total = 0
+    local pickedName
     for name, entry in pairs(matches) do
         if total >= count then break end
         for _, loc in ipairs(entry.locations) do
@@ -119,23 +131,33 @@ local function handleGive(chat, idx, args, user)
                 if err then log_lib.warn("push from %s: %s", loc.chest, tostring(err)) end
             end
         end
-        if total > 0 then delivered(chat, user, name, total, total) ; break end
+        if total > 0 then pickedName = name ; break end
     end
-    if total == 0 then delivered(chat, user, query, 0, 0) end
+    if total > 0 then
+        delivered(chat, user, pickedName, total, total)
+    else
+        delivered(chat, user, table.concat(queryTokens, " "), 0, 0)
+    end
 end
 
 local function handleFind(chat, idx, args, user)
-    local query = args[1]
-    if not query then
-        sendLines(chat, user, { "usage: !find <name>" }) ; return
+    if #args == 0 then
+        sendLines(chat, user, { "usage: !find <name...>" }) ; return
     end
-    local matches = index.matchNames(idx, query)
-    local lines = {}
+    local matches = index.matchNames(idx, args)
+    local rows = {}
     for name, entry in pairs(matches) do
-        lines[#lines + 1] = ("%s: %d (%d)"):format(name, entry.total, #entry.locations)
-        if #lines >= 20 then break end
+        rows[#rows + 1] = { name = name, total = entry.total, locs = #entry.locations }
     end
-    if #lines == 0 then lines[1] = ("no match for %q"):format(query) end
+    table.sort(rows, function(a, b) return a.total > b.total end)
+    local lines = {}
+    for i, r in ipairs(rows) do
+        if i > 20 then break end
+        lines[#lines + 1] = ("%s: %d (%d)"):format(r.name, r.total, r.locs)
+    end
+    if #lines == 0 then
+        lines[1] = ("no match for %q"):format(table.concat(args, " "))
+    end
     sendLines(chat, user, lines)
 end
 

@@ -21,12 +21,39 @@ function M.build(invs)
     return idx
 end
 
-function M.matchNames(idx, query)
+-- Tokenise a query into lowercase non-empty tokens.
+local function toTokens(q)
     local out = {}
-    if idx[query] then out[query] = idx[query] ; return out end
-    local lower = query:lower()
+    if type(q) == "string" then
+        for w in q:lower():gmatch("%S+") do out[#out + 1] = w end
+    elseif type(q) == "table" then
+        for _, w in ipairs(q) do
+            for s in tostring(w):lower():gmatch("%S+") do out[#out + 1] = s end
+        end
+    end
+    return out
+end
+
+-- Fuzzy match: every token must appear (substring, case-insensitive) in
+-- either the registry name or the display name. Empty query → empty result.
+function M.matchNames(idx, query)
+    local tokens = toTokens(query)
+    if #tokens == 0 then return {} end
+
+    -- exact registry-name hit short-circuits
+    if type(query) == "string" and idx[query] then
+        return { [query] = idx[query] }
+    end
+
+    local out = {}
     for name, entry in pairs(idx) do
-        if name:lower():find(lower, 1, true) then out[name] = entry end
+        local hay = name:lower()
+        if entry.displayName then hay = hay .. "\0" .. entry.displayName:lower() end
+        local all = true
+        for _, t in ipairs(tokens) do
+            if not hay:find(t, 1, true) then all = false; break end
+        end
+        if all then out[name] = entry end
     end
     return out
 end

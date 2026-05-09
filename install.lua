@@ -45,6 +45,14 @@ local PROGRAMS = {
     smelter = {
         "smelter.lua",
     },
+    mining = {
+        "lib/inv.lua",
+        "lib/log.lua",
+        "mining/pos.lua",
+        "mining/state.lua",
+        "mining/filter.lua",
+        "mining/miner.lua",
+    },
 }
 
 local AUTOSTART_ENTRY = {
@@ -52,6 +60,7 @@ local AUTOSTART_ENTRY = {
     treefarm = 'shell.run("treefarm/monitor.lua")',
     builder  = '-- builder is run on demand: shell.run("builder/builder.lua", "builder/schemas/<name>.lua")',
     smelter  = 'shell.run("smelter.lua")',
+    mining   = '-- mining is run on demand: shell.run("mining/miner.lua", "64", "8", "--start") or omit args to resume',
 }
 
 local function parseArgs(args)

@@ -27,6 +27,7 @@ Each program lives in its own directory with a `README.md` and entry-point Lua f
 - **`treefarm/`** — `monitor.lua` watches a Create-saw farm, alerts on jam / low saplings via chat box.
 - **`storage/`** — `controller.lua` indexes a chest network, serves chat-driven `!give` / `!find` / `!list`.
 - **`builder/`** — `builder.lua` runs on a plain turtle, places blocks layer-by-layer from `schemas/*.lua`.
+- **`mining/`** — `miner.lua` runs on a mining turtle, branch-mines with auto-refuel, vein follow, and resume across reboots.
 - **`lib/`** — shared helpers: `inv.lua` (inventory ops), `log.lua` (chat + monitor + term sink).
 
 Each program's `README.md` lists the exact peripherals it expects (by type string, snake_case for 1.21.1) and the in-game wiring required.

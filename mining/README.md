@@ -1,0 +1,117 @@
+# Mining turtle
+
+Branch-mining turtle with auto-refuel, auto-return, vein follow, and resume across reboots.
+
+## Hardware
+
+| Item | Qty | Recipe |
+|---|---|---|
+| Mining Turtle | 1 | plain turtle (7 iron + chest + computer) → equip diamond pickaxe via crafting grid (1 turtle + 1 diamond pickaxe shapeless = mining turtle) |
+| Diamond Pickaxe | 1 | 3 diamonds + 2 sticks (vanilla) |
+| Sophisticated Storage Chest (or vanilla) ×2 | 2 | for dump (above) + fuel (below) |
+
+Diamonds: **3** (the diamond pickaxe). Leaves you 1 spare diamond if you started with 4.
+
+## Base layout
+
+```
+   ┌───────────────┐
+   │  dump chest   │   ← items go here (dropUp)
+   │   (above)     │
+   └───────────────┘
+          │
+   ┌───────────────┐
+   │   TURTLE      │   ← starts here, facing into the mine
+   └───────────────┘
+          │
+   ┌───────────────┐
+   │  fuel chest   │   ← coal / charcoal / logs (suckDown)
+   │   (below)     │
+   └───────────────┘
+```
+
+The turtle's *forward* direction at start = the direction the mine extends into. After it digs into the wall, that's the **main shaft** (north in turtle-relative coords).
+
+## Mining pattern (branch mining)
+
+```
+plan view, looking down. T = turtle home. → = main shaft. ↑↓ = branches.
+S = block-spaced spine.
+
+         ↑↑↑↑↑↑↑↑   (branch left, length B)
+         |
+T → S → S → S → →→→→→→→→→→→→→→→  (main shaft, length L)
+         |
+         ↓↓↓↓↓↓↓↓   (branch right, length B)
+
+         (next branch pair every 3 forward steps)
+```
+
+CLI:
+
+```
+mining/miner.lua <shaft_length> <branch_length> --start
+```
+
+Example:
+
+```
+mining/miner.lua 64 8 --start
+```
+
+Mines a 64-block main shaft, with 8-block branches every 3 blocks (L+R). Total ≈ 64 + 22×8×2 = ~416 blocks dug per shaft.
+
+To **resume** after a reboot or interruption, omit `--start`:
+
+```
+mining/miner.lua
+```
+
+Saved state in `/.miner_state` carries `pos`, `facing`, `shaft_progress`, and the original `--start` args.
+
+## Behaviour
+
+- **Auto-refuel mid-mine.** When fuel ≤ 256, the turtle scans its inventory for any `refuel`-burnable item (coal, charcoal, log, lava bucket) and burns it.
+- **Trash dump.** Every step, drops cobblestone, dirt, gravel, andesite/diorite/granite/tuff, netherrack, basalt, blackstone, end stone, smooth basalt, cobbled deepslate. Keeps stone, deepslate (block form), all `_ore` variants, raw metals, ancient debris, gilded blackstone, redstone, lapis, coal, diamonds, etc.
+- **Vein mining.** When `inspect()` finds an ore on a wall / floor / ceiling, the turtle digs into the vein and follows it (DFS bounded to depth 16) before returning to the corridor.
+- **Auto-return.** Goes home when:
+  - Inventory is full AND no trash to dump, OR
+  - Fuel level ≤ Manhattan-distance home + 64 (safety margin)
+- **Dump + refuel at home.**
+  - `dropUp()` everything that isn't fuel-burnable into the dump chest.
+  - `suckDown()` from the fuel chest until fuel level ≥ 2048.
+- **Resume.** Walks back to the last known shaft position and continues mining.
+- **Stop.** When the shaft is complete, dumps a final time and clears state. Also stops if fuel chest empty + insufficient fuel for another round-trip.
+
+## Recovery
+
+If you break or move the turtle mid-run, the state file persists at `<world>/computercraft/computer/<id>/.miner_state`. Edit or delete to reset:
+
+```
+delete /.miner_state    # at the turtle's shell — forces fresh-start
+```
+
+If the turtle lost track of position (broken mid-move, world rollback), do **NOT** resume — you risk it walking into walls or skipping the corridor. Manually carry it back to start, run `delete /.miner_state`, then `mining/miner.lua <shaft> <branch> --start`.
+
+## Limits / known gaps
+
+- **No GPS.** Position is dead-reckoning. If the turtle gets unloaded mid-step (rare on a dedicated server but possible during chunk reload), saved position can drift one block.
+- **No obstacle pathing.** Return path assumes the branches and shaft remain clear after mining. If you backfill or a creeper blows up the corridor, the turtle digs through whatever's in the way (it has a pickaxe) but on big detours it may get confused.
+- **Single Y level.** No vertical stairs / quarry mode. Branch mines at the Y you start at — pick Y=-58 for diamond yield.
+- **Single turtle.** No fleet coordination.
+- **One direction.** Doesn't pivot the spine — pick the right facing before `--start`.
+- **Fuel chest must be a single chest.** Doesn't traverse a network.
+
+## Install
+
+After you've crafted the mining turtle, run on the turtle:
+
+```
+wget run "https://raw.githubusercontent.com/alisonjenkins/computercraft-programs/master/install.lua?cb=mining" mining
+```
+
+Then start mining:
+
+```
+mining/miner.lua 64 8 --start
+```

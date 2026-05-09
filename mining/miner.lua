@@ -4,8 +4,12 @@
 --   - dump chest above turtle's start position
 --   - fuel chest below turtle's start position (or share one chest above)
 -- Usage:
---   mining/miner.lua <shaft_length> <branch_length> --start
+--   mining/miner.lua <shaft_length> <branch_length> --start [--tall]
 --   mining/miner.lua                                  -- resume from saved state
+--
+-- --tall  carves a 1x3 player-walkable corridor (digs ceiling + floor on
+--         every advance). Default is 1x1 — twice as fuel-efficient,
+--         same ore-detection coverage on the 4 perpendicular faces.
 
 package.path = package.path .. ";/disk/?.lua;/disk/?/init.lua;../?.lua"
 
@@ -25,9 +29,12 @@ local args = {
     shaft_length  = tonumber(argv[1]) or 64,
     branch_length = tonumber(argv[2]) or 8,
     fresh_start   = false,
+    corridor_tall = false,             -- false = 1×1 (smart), true = 1×3 (walkable)
 }
 for _, a in ipairs(argv) do
-    if a == "--start" then args.fresh_start = true end
+    if     a == "--start" then args.fresh_start = true
+    elseif a == "--tall"  then args.corridor_tall = true
+    elseif a == "--smart" then args.corridor_tall = false end
 end
 
 -- ── ore detection ─────────────────────────────────────────────────────────
@@ -183,14 +190,24 @@ local function veinBelow()
 end
 
 local function mineStep()
-    -- 1. Mine forward + advance. Corridor stays 1 block tall.
+    -- 1. Mine forward + advance.
     if turtle.detect() then turtle.dig() end
     moveForward()
-    -- 2. Inspect each of the 4 perpendicular faces. Only dig if ore.
+    -- 2. Inspect each of the 4 perpendicular faces and vein-mine ores.
+    --    Order matters: side walls first (cheap), then up/down. veinAbove /
+    --    veinBelow only dig the cell if it's ore — they don't clear the
+    --    corridor speculatively.
     veinSide("left")
     veinSide("right")
     veinAbove()
     veinBelow()
+    -- 3. If --tall is set, clear ceiling + floor of any non-ore block so
+    --    the corridor is player-walkable. Done after vein scans so we
+    --    haven't already turned the cell into air before inspect ran.
+    if args.corridor_tall then
+        if turtle.detectUp()   then turtle.digUp()   end
+        if turtle.detectDown() then turtle.digDown() end
+    end
     persist()
 end
 

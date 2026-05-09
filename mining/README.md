@@ -50,7 +50,7 @@ T → S → S → S → →→→→→→→→→→→→→→→  (main sha
 CLI:
 
 ```
-mining/miner.lua <shaft_length> <branch_length> --start
+mining/miner.lua <shaft_length> <branch_length> --start [--tall]
 ```
 
 Example:
@@ -60,6 +60,15 @@ mining/miner.lua 64 8 --start
 ```
 
 Mines a 64-block main shaft, with 8-block branches every 3 blocks (L+R). Total ≈ 64 + 22×8×2 = ~416 blocks dug per shaft.
+
+**Corridor height** (flag at first run):
+
+| Flag | Corridor | Fuel per advance | Ore-detection coverage | Use when |
+|---|---|---|---|---|
+| (default) | 1×1 | 2 (dig forward + move) | 4 perpendicular faces inspected per step | Pure ore-mining. Walking through afterwards means ducking; preferred for the turtle's own work. |
+| `--tall`  | 1×3 | 4 (dig forward + dig up + dig down + move) | Same 4 faces (inspect runs before clear-out) | You want to walk through later — caves explore, run gear, lay rails. |
+
+`--smart` is the default explicit alias.
 
 To **resume** after a reboot or interruption, omit `--start`:
 

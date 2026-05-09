@@ -70,6 +70,14 @@ Mines a 64-block main shaft, with 8-block branches every 3 blocks (L+R). Total �
 
 `--smart` is the default explicit alias.
 
+**Mode swap mid-run:** running with `--tall` (or `--smart`) on a resume command overrides the saved mode without losing position or `shaft_progress`. Example: started in 1×1 default, change your mind, want walkable for the rest:
+
+```
+mining/miner.lua --tall
+```
+
+Continues from where it left off, but every subsequent advance is 1×3. No flag = keep the saved mode.
+
 To **resume** after a reboot or interruption, omit `--start`:
 
 ```

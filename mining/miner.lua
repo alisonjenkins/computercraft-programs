@@ -31,10 +31,15 @@ local args = {
     fresh_start   = false,
     corridor_tall = false,             -- false = 1×1 (smart), true = 1×3 (walkable)
 }
+-- Track whether the user explicitly named a corridor mode on the CLI. On
+-- resume, an explicit flag overrides the saved mode so you can swap mid-run
+-- ("mining/miner.lua --tall" turns the rest of the run into a 1x3 corridor
+-- without losing shaft_progress); no flag means "keep saved mode".
+local explicitMode = nil
 for _, a in ipairs(argv) do
     if     a == "--start" then args.fresh_start = true
-    elseif a == "--tall"  then args.corridor_tall = true
-    elseif a == "--smart" then args.corridor_tall = false end
+    elseif a == "--tall"  then args.corridor_tall = true ; explicitMode = true
+    elseif a == "--smart" then args.corridor_tall = false; explicitMode = false end
 end
 
 -- ── ore detection ─────────────────────────────────────────────────────────
@@ -363,17 +368,29 @@ local function run()
     local loaded = state.load()
     if loaded and not args.fresh_start then
         SAVED = loaded
+        SAVED.args = SAVED.args or {}
         p     = SAVED.pos or pos.new()
-        args.shaft_length  = SAVED.args and SAVED.args.shaft_length  or args.shaft_length
-        args.branch_length = SAVED.args and SAVED.args.branch_length or args.branch_length
-        print("resumed at", p.x, p.y, p.z, p.facing,
-            "shaft_progress=", SAVED.shaft_progress or 0)
+        args.shaft_length  = SAVED.args.shaft_length  or args.shaft_length
+        args.branch_length = SAVED.args.branch_length or args.branch_length
+        -- Corridor mode: CLI flag (if explicitly set) wins, else saved.
+        if explicitMode == nil then
+            args.corridor_tall = SAVED.args.corridor_tall == true
+        else
+            args.corridor_tall = explicitMode
+            SAVED.args.corridor_tall = explicitMode
+        end
+        persist()
+        print(("resumed at (%d,%d,%d %s) shaft_progress=%d mode=%s")
+            :format(p.x, p.y, p.z, p.facing, SAVED.shaft_progress or 0,
+                args.corridor_tall and "tall" or "smart"))
     else
         SAVED = { args = args, shaft_progress = 0 }
         p     = pos.new()
         state.clear()
         persist()
-        print(("starting fresh: shaft=%d branch=%d"):format(args.shaft_length, args.branch_length))
+        print(("starting fresh: shaft=%d branch=%d mode=%s")
+            :format(args.shaft_length, args.branch_length,
+                args.corridor_tall and "tall" or "smart"))
     end
 
     while true do

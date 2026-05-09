@@ -95,6 +95,9 @@ local function ensureDirOf(path)
 end
 
 local function fetch(url)
+    -- Cache-bust raw.githubusercontent.com — its CDN can lag pushes by minutes.
+    local sep = url:find("?", 1, true) and "&" or "?"
+    url = url .. sep .. "nocache=" .. tostring(os.epoch("utc"))
     local h, err = http.get(url, nil, true)  -- binary=true so we don't break on non-utf8 bytes
     if not h then return nil, err or "http error" end
     local body = h.readAll()

@@ -138,36 +138,59 @@ local function veinMineNeighbours(depth)
     end
 end
 
--- ── single forward mining step (corridor) ─────────────────────────────────
+-- ── single forward mining step (1×1 corridor, ore-aware) ─────────────────
+--
+-- 1-tall corridor inspects 4 perpendicular faces per advance (L/R walls,
+-- floor, ceiling) for 1 dig + 1 move = 2 fuel. The previous 3-tall version
+-- spent 4 fuel per advance for the same 4 inspectable faces — ore yield
+-- per fuel was strictly worse. We never carve up/down speculatively now;
+-- we only dig those cells if they're ore.
+
+local function veinSide(direction)
+    if direction == "left" then turnLeft() else turnRight() end
+    local present, data = turtle.inspect()
+    if present and isOre(data) then
+        turtle.dig()
+        moveForward()
+        veinMineNeighbours(CONFIG.vein_max_depth)
+        -- U-turn back into corridor.
+        turnRight() ; turnRight()
+        moveForward()
+        turnRight() ; turnRight()
+    end
+    -- restore corridor facing
+    if direction == "left" then turnRight() else turnLeft() end
+end
+
+local function veinAbove()
+    local present, data = turtle.inspectUp()
+    if present and isOre(data) then
+        turtle.digUp()
+        moveUp()
+        veinMineNeighbours(CONFIG.vein_max_depth)
+        moveDown()
+    end
+end
+
+local function veinBelow()
+    local present, data = turtle.inspectDown()
+    if present and isOre(data) then
+        turtle.digDown()
+        moveDown()
+        veinMineNeighbours(CONFIG.vein_max_depth)
+        moveUp()
+    end
+end
 
 local function mineStep()
-    -- Mine the block in front, advance into it, then ensure the column is clear.
+    -- 1. Mine forward + advance. Corridor stays 1 block tall.
     if turtle.detect() then turtle.dig() end
     moveForward()
-    if turtle.detectUp()   then turtle.digUp()   end
-    if turtle.detectDown() then turtle.digDown() end
-    -- Inspect side walls: if ore, vein-mine.
-    for _, dir in ipairs({ "left", "right" }) do
-        if dir == "left" then turnLeft() else turnRight() end
-        if digOreInspect(turtle.inspect, turtle.dig) then
-            moveForward()
-            veinMineNeighbours(CONFIG.vein_max_depth)
-            -- back out one
-            turnRight() ; turnRight() ; moveForward()
-            turnRight() ; turnRight()                 -- face back into corridor
-            if dir == "left" then turnLeft() else turnRight() end
-            -- now facing along corridor again
-        else
-            if dir == "left" then turnRight() else turnLeft() end
-        end
-    end
-    -- Inspect up + down
-    if digOreInspect(turtle.inspectUp,   turtle.digUp)   then
-        moveUp() ; veinMineNeighbours(CONFIG.vein_max_depth) ; moveDown()
-    end
-    if digOreInspect(turtle.inspectDown, turtle.digDown) then
-        moveDown() ; veinMineNeighbours(CONFIG.vein_max_depth) ; moveUp()
-    end
+    -- 2. Inspect each of the 4 perpendicular faces. Only dig if ore.
+    veinSide("left")
+    veinSide("right")
+    veinAbove()
+    veinBelow()
     persist()
 end
 

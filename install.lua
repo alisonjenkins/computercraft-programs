@@ -52,6 +52,7 @@ local PROGRAMS = {
         "mining/state.lua",
         "mining/filter.lua",
         "mining/miner.lua",
+        "mining/digdown.lua",
     },
 }
 

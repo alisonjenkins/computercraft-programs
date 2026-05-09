@@ -34,6 +34,54 @@ local function toTokens(q)
     return out
 end
 
+local function shortName(name)
+    local i = name:find(":", 1, true)
+    return i and name:sub(i + 1) or name
+end
+
+-- Lower score = better match. Used to disambiguate "andesite" → minecraft:andesite
+-- rather than create:andesite_funnel.
+function M.rank(name, entry, tokens)
+    local short = shortName(name):lower()
+    local query = table.concat(tokens, " ")
+    local disp  = entry.displayName and entry.displayName:lower() or ""
+
+    -- 1. Exact short name match wins outright.
+    if short == query then return 0 end
+    -- 2. Display name exactly equals query (case-insensitive).
+    if disp == query then return 1 end
+    -- 3. Joined-by-underscore short name equals tokens.
+    if short == table.concat(tokens, "_") then return 2 end
+    -- 4. Score by exact word-component coverage in the short name.
+    local parts = {}
+    for w in short:gmatch("[^_]+") do parts[#parts + 1] = w end
+    local hits = 0
+    for _, t in ipairs(tokens) do
+        for _, p in ipairs(parts) do
+            if p == t then hits = hits + 1 ; break end
+        end
+    end
+    -- More exact-component hits = better. Shorter name = better tiebreaker.
+    return 1000 - hits * 100 + #short
+end
+
+function M.rankSort(matches, tokens)
+    local rows = {}
+    for name, entry in pairs(matches) do
+        rows[#rows + 1] = {
+            name = name, entry = entry,
+            score = M.rank(name, entry, tokens),
+        }
+    end
+    table.sort(rows, function(a, b)
+        if a.score ~= b.score then return a.score < b.score end
+        return a.entry.total > b.entry.total  -- tiebreaker: more in stock first
+    end)
+    return rows
+end
+
+M.tokenize = toTokens
+
 -- Fuzzy match: every token must appear (substring, case-insensitive) in
 -- either the registry name or the display name. Empty query → empty result.
 function M.matchNames(idx, query)

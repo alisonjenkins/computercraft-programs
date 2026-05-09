@@ -118,10 +118,14 @@ local function handleGive(chat, idx, args, user)
     end
 
     local matches = index.matchNames(idx, queryTokens)
-    local total = 0
+    local ranked  = index.rankSort(matches, index.tokenize(queryTokens))
+    -- Only pull from the single best-ranked item. Avoids "andesite" pulling
+    -- andesite_funnel slots when minecraft:andesite is also stocked.
     local pickedName
-    for name, entry in pairs(matches) do
-        if total >= count then break end
+    local total = 0
+    if ranked[1] then
+        local entry = ranked[1].entry
+        pickedName  = ranked[1].name
         for _, loc in ipairs(entry.locations) do
             if total >= count then break end
             local from = peripheral.wrap(loc.chest)
@@ -131,7 +135,6 @@ local function handleGive(chat, idx, args, user)
                 if err then log_lib.warn("push from %s: %s", loc.chest, tostring(err)) end
             end
         end
-        if total > 0 then pickedName = name ; break end
     end
     if total > 0 then
         delivered(chat, user, pickedName, total, total)
@@ -145,15 +148,11 @@ local function handleFind(chat, idx, args, user)
         sendLines(chat, user, { "usage: !find <name...>" }) ; return
     end
     local matches = index.matchNames(idx, args)
-    local rows = {}
-    for name, entry in pairs(matches) do
-        rows[#rows + 1] = { name = name, total = entry.total, locs = #entry.locations }
-    end
-    table.sort(rows, function(a, b) return a.total > b.total end)
+    local rows    = index.rankSort(matches, index.tokenize(args))
     local lines = {}
     for i, r in ipairs(rows) do
         if i > 20 then break end
-        lines[#lines + 1] = ("%s: %d (%d)"):format(r.name, r.total, r.locs)
+        lines[#lines + 1] = ("%s: %d (%d)"):format(r.name, r.entry.total, #r.entry.locations)
     end
     if #lines == 0 then
         lines[1] = ("no match for %q"):format(table.concat(args, " "))

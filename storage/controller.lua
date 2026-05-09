@@ -2,7 +2,8 @@
 -- Computer: basic computer with wired modem (advanced works too — but no colour/mouse needed)
 -- Peripherals expected:
 --   N× inventory          (storage chests on the wired modem network)
---   1× inventory          (the "delivery slot" chest — set CONFIG.delivery_chest)
+--   1× inventory          (delivery chest — set CONFIG.delivery_chest, items pushed here on !give)
+--   0..1× inventory       (input chest — set CONFIG.input_chest, drained into storage)
 --   1× chat_box           (Advanced Peripherals)
 --   0..1× inventory_manager + linked Memory Card (optional direct-to-player)
 
@@ -14,8 +15,10 @@ local commands = require("storage.commands")
 
 local CONFIG = {
     delivery_chest    = nil,   -- e.g. "sophisticatedstorage:chest_3" — REQUIRED
-    inv_manager_dir   = "up",  -- direction from inventory_manager to its adjacent chest
+    input_chest       = nil,   -- optional: items here get auto-drained into storage
+    inv_manager_dir   = "up",
     reindex_period_s  = 60,
+    ingest_period_s   = 5,
     whitelist         = nil,   -- nil = open; { ["alice"]=true } = whitelist
 }
 
@@ -24,26 +27,35 @@ local function loadSettings()
         description = "Network name of the chest items are pushed to on !give",
         type        = "string",
     })
-    -- CC:T loads /.settings by default; the shell `set` command saves there too.
+    settings.define("input_chest", {
+        description = "Optional: chest auto-drained into storage on a timer",
+        type        = "string",
+    })
     settings.load()
     local v = settings.get("delivery_chest")
     if v and v ~= "" then CONFIG.delivery_chest = v end
+    local i = settings.get("input_chest")
+    if i and i ~= "" then CONFIG.input_chest = i end
 end
 
-local function discoverInventories()
-    local skip = { [CONFIG.delivery_chest or ""] = true }
+local function isReservedChest(name)
+    return name == CONFIG.delivery_chest or name == CONFIG.input_chest
+end
+
+local function discoverStorageInventories()
     local out = {}
     for _, p in ipairs({ peripheral.find("inventory") }) do
         local name = peripheral.getName(p)
-        if not skip[name] then out[#out + 1] = { name = name, inv = p } end
+        if not isReservedChest(name) then
+            out[#out + 1] = { name = name, inv = p }
+        end
     end
     return out
 end
 
 local function delivered(chat, user, name, count, total)
-    local label = name
     if total > 0 then
-        chat.sendMessageToPlayer(("delivered %d × %s"):format(count, label), user, "storage")
+        chat.sendMessageToPlayer(("delivered %d × %s"):format(count, name), user, "storage")
     else
         chat.sendMessageToPlayer(("nothing matched %q"):format(name), user, "storage")
     end
@@ -102,6 +114,66 @@ local function isAuthed(user)
     return CONFIG.whitelist[user] == true
 end
 
+local function ingestOnce(invs)
+    if not CONFIG.input_chest then return 0 end
+    local input = peripheral.wrap(CONFIG.input_chest)
+    if not input then return 0 end
+    local total_moved = 0
+    for slot, item in pairs(input.list()) do
+        local remaining = item.count
+        for _, target in ipairs(invs) do
+            if remaining <= 0 then break end
+            local moved = input.pushItems(target.name, slot, remaining)
+            remaining = remaining - moved
+            total_moved = total_moved + moved
+        end
+    end
+    return total_moved
+end
+
+local function chatLoop(state)
+    local reindexAt = os.startTimer(CONFIG.reindex_period_s)
+    while true do
+        local ev = { os.pullEvent() }
+        if ev[1] == "chat" then
+            local _, user, msg = table.unpack(ev)
+            if isAuthed(user) then
+                local cmd, args = commands.parse(msg)
+                if cmd == "give"     then handleGive(state.chat, state.idx, args, user)
+                elseif cmd == "find" then handleFind(state.chat, state.idx, args, user)
+                elseif cmd == "list" then handleList(state.chat, state.idx, args, user)
+                elseif cmd == "reindex" then
+                    state.invs = discoverStorageInventories()
+                    state.idx  = index.build(state.invs)
+                    state.chat.sendMessageToPlayer("reindexed", user, "storage")
+                elseif cmd == "help" then
+                    for _, l in ipairs(commands.help()) do
+                        state.chat.sendMessageToPlayer(l, user, "storage")
+                    end
+                end
+            end
+        elseif ev[1] == "timer" and ev[2] == reindexAt then
+            state.invs = discoverStorageInventories()
+            state.idx  = index.build(state.invs)
+            reindexAt = os.startTimer(CONFIG.reindex_period_s)
+        end
+    end
+end
+
+local function ingestLoop(state)
+    if not CONFIG.input_chest then return end
+    log_lib.info("ingest from %s every %ds", CONFIG.input_chest, CONFIG.ingest_period_s)
+    while true do
+        sleep(CONFIG.ingest_period_s)
+        local moved = ingestOnce(state.invs)
+        if moved > 0 then
+            log_lib.info("ingested %d items", moved)
+            -- Trigger reindex after ingest so !find/!give see new items quickly.
+            state.idx = index.build(state.invs)
+        end
+    end
+end
+
 local function run()
     loadSettings()
     assert(CONFIG.delivery_chest,
@@ -112,39 +184,17 @@ local function run()
 
     log_lib.attach({ prefix = "[storage]", chat = chat, chat_prefix = "storage" })
 
-    local invs = discoverInventories()
+    local invs = discoverStorageInventories()
     log_lib.info("indexing %d chests", #invs)
     local idx = index.build(invs)
     log_lib.info("index built: %d distinct items", (function()
         local n = 0 ; for _ in pairs(idx) do n = n + 1 end ; return n end)())
 
-    local reindexAt = os.startTimer(CONFIG.reindex_period_s)
-
-    while true do
-        local ev = { os.pullEvent() }
-        if ev[1] == "chat" then
-            local _, user, msg = table.unpack(ev)
-            if isAuthed(user) then
-                local cmd, args = commands.parse(msg)
-                if cmd == "give"     then handleGive(chat, idx, args, user)
-                elseif cmd == "find" then handleFind(chat, idx, args, user)
-                elseif cmd == "list" then handleList(chat, idx, args, user)
-                elseif cmd == "reindex" then
-                    invs = discoverInventories()
-                    idx = index.build(invs)
-                    chat.sendMessageToPlayer("reindexed", user, "storage")
-                elseif cmd == "help" then
-                    for _, l in ipairs(commands.help()) do
-                        chat.sendMessageToPlayer(l, user, "storage")
-                    end
-                end
-            end
-        elseif ev[1] == "timer" and ev[2] == reindexAt then
-            invs = discoverInventories()
-            idx = index.build(invs)
-            reindexAt = os.startTimer(CONFIG.reindex_period_s)
-        end
-    end
+    local state = { chat = chat, idx = idx, invs = invs }
+    parallel.waitForAny(
+        function() chatLoop(state) end,
+        function() ingestLoop(state) end
+    )
 end
 
 run()

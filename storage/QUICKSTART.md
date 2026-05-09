@@ -250,6 +250,32 @@ shell.run("storage/controller.lua")
 
 Save (Ctrl-S → exit). On next reboot the storage controller runs automatically. Useful when the server restarts.
 
+## Phase 7.5 — auto-ingest from a dump chest
+
+The simplest "put loot in" workflow: pick one chest as the **input chest**. Items dropped here get automatically routed into the rest of the storage network every 5 seconds.
+
+```
+set input_chest sophisticatedstorage:chest_5
+```
+
+(Replace with the actual network name. Don't reuse the delivery chest.)
+
+Reboot or restart `storage/controller.lua`. On startup it logs:
+
+```
+[storage] [INFO] ingest from sophisticatedstorage:chest_5 every 5s
+```
+
+Behaviour:
+
+- Every 5 s, every slot in the input chest is pushed into a non-input non-delivery storage chest with space.
+- Items distribute across whichever chests have free slots first (no dedicated "iron chest" / "diamond chest" routing — that's a v2 feature).
+- When the network is full, items pile up in the input chest. Add more storage chests + modems and `!reindex`.
+
+Drop loot in, walk away. Index rebuilds after each ingest cycle so `!give` / `!list` see new items within ~5 s.
+
+For higher throughput: place a Create funnel or vanilla hopper above the input chest pulling from a chest minecart, mob farm output, drop chute, etc.
+
 ## Phase 8 — extend
 
 Now you have a baseline. Easy upgrades:

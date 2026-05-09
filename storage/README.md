@@ -63,6 +63,10 @@ whitelist = { ["alice"] = true, ["bob"] = true }
 
 Default `nil` = open to everyone.
 
+## Auto-ingest
+
+Set `CONFIG.input_chest` (or `set input_chest <name>` in the shell) and the controller drains that chest into the rest of the network every 5 s. Useful as a "dump everything here" loot box. Routing is naive: first chest with space wins, no smart binning.
+
 ## Limits / known gaps
 
 - Index is full-scan on startup + every 60s. Fine for ~100 chests; gets slow above that.

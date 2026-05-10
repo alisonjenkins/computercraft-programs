@@ -110,6 +110,52 @@ delete /.miner_state    # at the turtle's shell — forces fresh-start
 
 If the turtle lost track of position (broken mid-move, world rollback), do **NOT** resume — you risk it walking into walls or skipping the corridor. Manually carry it back to start, run `delete /.miner_state`, then `mining/miner.lua <shaft> <branch> --start`.
 
+## Companion: `room.lua` — flat-room excavator
+
+Carves a rectangular room. Useful for bases, mob farms, storage halls.
+
+### Hardware
+
+Same chest layout as `miner.lua`: dump chest above the turtle, fuel chest below. Turtle starts at "home" — one block back from the room's near face. The room extends FORWARD from the turtle.
+
+### CLI
+
+```
+mining/room.lua <length> <width> <height> --start [--left] [--up]
+mining/room.lua                              # resume from saved state
+```
+
+Axes are turtle-relative at start:
+
+- `length`: blocks **forward** (the direction the turtle faces).
+- `width`: blocks **right** of the turtle. Use `--left` to sweep left instead.
+- `height`: blocks **down** from start. Use `--up` to dig upward instead (room above the turtle).
+
+So with no flags, the room sits forward + right + below. The turtle starts at the **front-top-left** corner (from the player's POV looking into the room). Place the turtle anywhere relative to the room you want; pick `--left` / `--up` to match.
+
+Example — a 16×16×4 storage hall:
+
+```
+mining/room.lua 16 16 4 --start
+```
+
+### Behaviour
+
+- **Layer-by-layer serpentine.** Mines the top layer first (length × width), then digs down (or up) one block, mines the next layer, etc.
+- **Auto-refuel mid-excavation.** Same trigger as `miner.lua`: when fuel ≤ 256, refuels from any burnable in inventory.
+- **Auto-return.** Returns home when inventory is full or fuel is too low to safely complete a return trip.
+- **Dump + refuel at home.** dropUp's everything that isn't fuel-burnable, suckDown's from the fuel chest below.
+- **Low-fuel polling.** If the fuel chest is empty AND the turtle's own inventory has no burnables, the turtle **pauses and polls** every 5 seconds. Drop coal/charcoal/logs into the turtle's GUI (right-click it) or top up the fuel chest below; the turtle resumes automatically once fuel ≥ 4096.
+- **Lava-aware.** Like `digdown.lua`: places a plug block (cobblestone, dirt, etc. from inventory) before digging into a lava cell. Without a plug it stops rather than diving in.
+- **Resume.** State persists at `/.miner_state` (tagged `program = "room"` so it can't be confused with the branch miner). Saved fields: `pos`, `args` (length/width/height/sweep_left/dig_up), `layer`, `col`, `col_progress`, `col_dir`. After a reboot, `mining/room.lua` (no args) walks back to the saved mining position and continues.
+- **Stop.** When the final layer is done, dumps a final time and clears state.
+
+### Limits
+
+- **No vein-follow.** Rooms by definition mine every block — vein DFS would be wasted work. If you want ore yield, run `miner.lua` first; use `room.lua` for clearing space.
+- **No mid-run dimension change.** Unlike `miner.lua`'s `--tall` swap, you can't resize the room mid-excavation. Delete `/.miner_state` and re-`--start` to change dimensions.
+- **No GPS.** Same dead-reckoning caveats as `miner.lua`.
+
 ## Companion: `digdown.lua`
 
 Sinks a 1×1 ladder shaft straight down. Useful for getting a turtle (or yourself) down to Y=-58 efficiently.

@@ -53,6 +53,7 @@ local PROGRAMS = {
         "mining/filter.lua",
         "mining/miner.lua",
         "mining/digdown.lua",
+        "mining/room.lua",
     },
 }
 
@@ -61,7 +62,7 @@ local AUTOSTART_ENTRY = {
     treefarm = 'shell.run("treefarm/monitor.lua")',
     builder  = '-- builder is run on demand: shell.run("builder/builder.lua", "builder/schemas/<name>.lua")',
     smelter  = 'shell.run("smelter.lua")',
-    mining   = '-- mining is run on demand: shell.run("mining/miner.lua", "64", "8", "--start") or omit args to resume',
+    mining   = '-- mining is run on demand: shell.run("mining/miner.lua", "64", "8", "--start"), shell.run("mining/digdown.lua", "122"), or shell.run("mining/room.lua", "16", "16", "4", "--start")',
 }
 
 local function parseArgs(args)

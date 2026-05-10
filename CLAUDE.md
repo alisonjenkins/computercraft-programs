@@ -1,45 +1,45 @@
 # computercraft-programs
 
-Lua programs for ComputerCraft (CC: Tweaked) computers and turtles, targeted at specific Minecraft modpacks.
+Lua programs for ComputerCraft (CC: Tweaked) computers and turtles, target specific Minecraft modpacks.
 
 ## Per-pack reference docs
 
-The peripheral surface available to a CC program depends on which mods the server has loaded. We track that surface per pack under `packs/<pack-name>/docs/`. Before writing or modifying a program, **read the relevant pack's `docs/index.md` first** — it routes you to the right page (CC:T core, addons, storage, etc.) and flags which peripherals are inert in that pack.
+Peripheral surface depends on mods loaded. Tracked per pack under `packs/<pack-name>/docs/`. Before writing/modifying program, **read pack's `docs/index.md` first** — routes to right page (CC:T core, addons, storage, etc.) and flags inert peripherals.
 
-Currently tracked packs:
+Tracked packs:
 
-- **`packs/arkana-aeronautics/`** — Arkana Aeronautics (Create-focused), MC 1.21.1 NeoForge. See `packs/arkana-aeronautics/README.md` for versions and `packs/arkana-aeronautics/docs/index.md` for the API surface.
+- **`packs/arkana-aeronautics/`** — Arkana Aeronautics (Create-focused), MC 1.21.1 NeoForge. See `packs/arkana-aeronautics/README.md` for versions, `packs/arkana-aeronautics/docs/index.md` for API surface.
 
 ## Pack source of truth
 
-Pack contents are not vendored here. They live in `../nix-config/pkgs/create-arkana-aeronautics-server/` (paths are relative to this repo's parent dir). When the pack bumps, update:
+Pack contents not vendored here. Live at `../nix-config/pkgs/create-arkana-aeronautics-server/` (paths relative to parent dir). On pack bump, update:
 
 1. `packs/<pack>/README.md` — version table.
-2. Any doc that pins a version-sensitive detail (e.g. AP type-string casing changed in 1.21.1).
+2. Any doc pinning version-sensitive detail (e.g. AP type-string casing changed in 1.21.1).
 
-A diff against the upstream `overlays.nix` and `arkana-mods.nix` is the fastest way to spot what changed.
+Diff against upstream `overlays.nix` and `arkana-mods.nix` = fastest way spot changes.
 
 ## Programs
 
-Each program lives in its own directory with a `README.md` and entry-point Lua file. Bootstrap any program onto a CC computer with `install.lua` (see below).
+Each program own directory with `README.md` + entry-point Lua file. Bootstrap onto CC computer with `install.lua` (below).
 
 - **`smelter.lua`** (root) — vanilla furnace auto-feeder. Original worked example.
-- **`treefarm/`** — `monitor.lua` watches a Create-saw farm, alerts on jam / low saplings via chat box.
-- **`storage/`** — `controller.lua` indexes a chest network, serves chat-driven `!give` / `!find` / `!list`.
-- **`builder/`** — `builder.lua` runs on a plain turtle, places blocks layer-by-layer from `schemas/*.lua`.
+- **`treefarm/`** — `monitor.lua` watches Create-saw farm, alerts on jam / low saplings via chat box.
+- **`storage/`** — `controller.lua` indexes chest network, serves chat-driven `!give` / `!find` / `!list`.
+- **`builder/`** — `builder.lua` runs on plain turtle, places blocks layer-by-layer from `schemas/*.lua`.
 - **`mining/`** — three turtle programs sharing `pos.lua` / `state.lua` / `filter.lua`:
   - `miner.lua` — branch mining (smart 1×1 default, `--tall` for 1×3 walkable), auto-refuel, vein follow, resume across reboots.
   - `digdown.lua` — vertical 1×1 ladder shaft, lava/water aware (plug + dig).
-  - `room.lua` — layer-by-layer rectangular-room excavator. State tagged `program="room"` so it can't collide with `miner.lua` saves.
+  - `room.lua` — layer-by-layer rectangular-room excavator. State tagged `program="room"` so can't collide with `miner.lua` saves.
 - **`lib/`** — shared helpers: `inv.lua` (inventory ops), `log.lua` (chat + monitor + term sink).
 
-Each program's `README.md` lists the exact peripherals it expects (by type string, snake_case for 1.21.1) and the in-game wiring required.
+Each program's `README.md` lists exact peripherals expected (by type string, snake_case for 1.21.1) and in-game wiring required.
 
-When writing a new program: target a specific pack; declare in a header comment which peripherals you wrap; mirror the directory layout when copying onto the in-game computer (`/lib/inv.lua`, `/<program>/<entry>.lua`).
+New program: target specific pack; declare in header comment which peripherals wrapped; mirror directory layout when copying onto in-game computer (`/lib/inv.lua`, `/<program>/<entry>.lua`).
 
 ## Installer (`install.lua`)
 
-`install.lua` is a single-file bootstrap that fetches a program's files from an HTTP source (default: this repo on GitHub raw) and writes them to the correct paths on the CC computer. Re-runs are idempotent — files are overwritten.
+`install.lua` = single-file bootstrap. Fetches program files from HTTP source (default: this repo on GitHub raw), writes to correct paths on CC computer. Re-runs idempotent — files overwritten.
 
 ```text
 # in-game on the CC computer:
@@ -50,16 +50,16 @@ wget run https://raw.githubusercontent.com/<user>/computercraft-programs/master/
 pastebin run <id> storage
 ```
 
-Programs known to the installer: `storage`, `treefarm`, `builder`, `smelter`, `mining` (bundles `miner.lua` + `digdown.lua` + `room.lua` + the shared `mining/{pos,state,filter}.lua`). Manifest of files per program lives in the `PROGRAMS` table at the top of `install.lua` — when adding a new program, add an entry there.
+Installer-known programs: `storage`, `treefarm`, `builder`, `smelter`, `mining` (bundles `miner.lua` + `digdown.lua` + `room.lua` + shared `mining/{pos,state,filter}.lua`). File manifest per program in `PROGRAMS` table at top of `install.lua` — adding new program, add entry there.
 
-`--autostart <program>` writes a `/startup.lua` so the program runs on every boot.
+`--autostart <program>` writes `/startup.lua` so program runs every boot.
 
-When adding a new program directory: update `install.lua`'s `PROGRAMS` and `AUTOSTART_ENTRY` tables, then push the change so `wget` sees the new files.
+Adding new program directory: update `install.lua`'s `PROGRAMS` and `AUTOSTART_ENTRY` tables, push change so `wget` sees new files.
 
 ## Style
 
-Reference docs in `packs/*/docs/` are quick-reference cards, not tutorials. Each page leads with a one-line **Status in this pack:** tag and links upstream for the full story. Method signatures live in fenced `lua` blocks. Peripheral type strings are always quoted (`"player_detector"`).
+Reference docs in `packs/*/docs/` = quick-reference cards, not tutorials. Each page leads with one-line **Status in this pack:** tag, links upstream for full story. Method signatures in fenced `lua` blocks. Peripheral type strings always quoted (`"player_detector"`).
 
 ## Methodology
 
-`docs/methodology.md` documents the pack-agnostic workflow used to build `packs/<pack>/docs/`: identifying mods from `nix-config`, extracting recipes directly from mod JARs (`unzip -p <jar> data/<modid>/recipe/<name>.json`), discovering peripheral surfaces from upstream docs vs in-game `peripheral.getMethods`, and refreshing when a pack bumps. Read this before adding a new pack or refreshing a stale one.
+`docs/methodology.md` documents pack-agnostic workflow for building `packs/<pack>/docs/`: identify mods from `nix-config`, extract recipes from mod JARs (`unzip -p <jar> data/<modid>/recipe/<name>.json`), discover peripheral surfaces from upstream docs vs in-game `peripheral.getMethods`, refresh on pack bump. Read before adding new pack or refreshing stale one.

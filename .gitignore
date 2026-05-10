@@ -1,0 +1,2 @@
+# Caveman compress backups — not needed in repo (git history is the real backup)
+*.original.md

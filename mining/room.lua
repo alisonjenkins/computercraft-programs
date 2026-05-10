@@ -212,25 +212,33 @@ local function returnHome()
     persist()
 end
 
--- Block until fuel level is at least `target`. First refuels from anything
--- already in inventory; then loops on suckDown (fuel chest below); and if the
--- chest is dry, prompts the user to drop fuel into the turtle's inventory and
--- polls every CONFIG.fuel_poll_seconds. Idempotent — safe to call any time.
+-- Two-phase fuel top-up.
+--
+-- Hard phase: block until fuel ≥ `minimum` (a safety floor — if we go below
+-- this we can't even guarantee a round trip). Polls every fuel_poll_seconds
+-- and asks the user to feed fuel.
+--
+-- Soft phase: try to top up to `target` without blocking. Pulls from the
+-- fuel chest below until it goes dry, burns whatever it can from inventory,
+-- and returns. We do NOT prompt or wait if `target` is unreachable — only
+-- the hard minimum is blocking.
 local function ensureFuel(target)
     if turtle.getFuelLevel() == "unlimited" then return end
-    filter.refuelFromInv(target)
+    local minimum = pos.distHome(p) + CONFIG.return_safety_margin
+    if minimum < CONFIG.mid_fuel_threshold then minimum = CONFIG.mid_fuel_threshold end
+    -- Hard phase.
+    filter.refuelFromInv(minimum)
     local warned = false
-    while turtle.getFuelLevel() < target do
+    while turtle.getFuelLevel() < minimum do
         local pulled = turtle.suckDown()
         if pulled then
-            filter.refuelFromInv(target)
+            filter.refuelFromInv(minimum)
         else
-            -- nothing to pull from below; check if any new fuel was hand-fed
-            filter.refuelFromInv(target)
-            if turtle.getFuelLevel() < target then
+            filter.refuelFromInv(minimum)
+            if turtle.getFuelLevel() < minimum then
                 if not warned then
-                    print(("fuel %d / target %d — drop coal/charcoal/logs into the turtle (or fuel chest below). polling every %ds…")
-                        :format(turtle.getFuelLevel(), target, CONFIG.fuel_poll_seconds))
+                    print(("fuel %d / minimum %d — drop coal/charcoal/logs into the turtle (or fuel chest below). polling every %ds…")
+                        :format(turtle.getFuelLevel(), minimum, CONFIG.fuel_poll_seconds))
                     warned = true
                 end
                 sleep(CONFIG.fuel_poll_seconds)
@@ -238,6 +246,11 @@ local function ensureFuel(target)
         end
     end
     if warned then print(("fuel ok: %d"):format(turtle.getFuelLevel())) end
+    -- Soft phase: top up toward target while there's fuel to pull.
+    while turtle.getFuelLevel() < target do
+        if not turtle.suckDown() then break end
+        filter.refuelFromInv(target)
+    end
 end
 
 local function dumpAndRefuel()

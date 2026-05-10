@@ -39,12 +39,52 @@ local FUELS = {
     ["minecraft:blaze_rod"]  = true,
 }
 
--- Item-name patterns. Order doesn't matter between categories — each item
--- is checked against every category and the FIRST positive class is used
--- (food → blast → smelt).
+-- Items that are themselves smelting/cooking outputs. Never re-smelt these,
+-- even if their name contains a substring that would otherwise match an
+-- input pattern (e.g. "cooked_beef" contains "beef", "dried_kelp" contains
+-- "kelp", "smooth_stone" contains "stone", "iron_ingot" comes from raw_iron).
+local SMELTED_OUTPUTS = {
+    -- Cooked food (smoker / furnace outputs)
+    ["minecraft:cooked_beef"]     = true,
+    ["minecraft:cooked_chicken"]  = true,
+    ["minecraft:cooked_mutton"]   = true,
+    ["minecraft:cooked_porkchop"] = true,
+    ["minecraft:cooked_rabbit"]   = true,
+    ["minecraft:cooked_cod"]      = true,
+    ["minecraft:cooked_salmon"]   = true,
+    ["minecraft:baked_potato"]    = true,
+    ["minecraft:dried_kelp"]      = true,
+    ["minecraft:popped_chorus_fruit"] = true,
+    -- Smelted blocks
+    ["minecraft:glass"]           = true,
+    ["minecraft:stone"]           = true,   -- output of smelting cobblestone
+    ["minecraft:smooth_stone"]    = true,
+    ["minecraft:smooth_basalt"]   = true,
+    ["minecraft:smooth_sandstone"] = true,
+    ["minecraft:smooth_red_sandstone"] = true,
+    ["minecraft:smooth_quartz"]   = true,
+    ["minecraft:terracotta"]      = true,
+    ["minecraft:nether_brick"]    = true,
+    ["minecraft:cracked_stone_bricks"] = true,
+    ["minecraft:cracked_nether_bricks"] = true,
+    ["minecraft:sponge"]          = true,
+    ["minecraft:deepslate"]       = true,   -- smelted from cobbled_deepslate
+    -- Smelted metals
+    ["minecraft:iron_ingot"]      = true,
+    ["minecraft:gold_ingot"]      = true,
+    ["minecraft:copper_ingot"]    = true,
+    ["minecraft:netherite_scrap"] = true,
+    -- Other
+    ["minecraft:charcoal"]        = true,
+    ["minecraft:green_dye"]       = true,   -- cactus → green dye
+}
+
+-- Item-name patterns. Each item is checked against SMELTED_OUTPUTS first
+-- (early return nil), then categorised food → blast → smelt.
 local function classify(name)
+    if SMELTED_OUTPUTS[name] then return nil end
     local n = name:lower()
-    -- Food (smoker)
+    -- Food (smoker). Substring is OK now because cooked outputs are blocked above.
     if n:find("beef",      1, true) or n:find("chicken",    1, true)
     or n:find("mutton",    1, true) or n:find("porkchop",   1, true)
     or n:find("rabbit",    1, true) or n:find("cod",        1, true)
@@ -57,11 +97,13 @@ local function classify(name)
     or n == "minecraft:ancient_debris"
     or n == "minecraft:gilded_blackstone"
     then return "blast" end
-    -- General smeltables (regular furnace)
+    -- General smeltables (regular furnace).
+    -- Note: don't include "stone" — it'd auto-convert to smooth_stone, which
+    -- the user may not want. Logs → charcoal. Cobblestone → stone (one step).
     if n:find("cobblestone", 1, true) or n:find("sand",      1, true)
     or n:find("log",         1, true) or n:find("netherrack", 1, true)
     or n == "minecraft:clay"          or n == "minecraft:wet_sponge"
-    or n == "minecraft:cactus"        or n == "minecraft:stone"
+    or n == "minecraft:cactus"
     or n == "minecraft:basalt"        or n == "minecraft:cobbled_deepslate"
     then return "smelt" end
     return nil

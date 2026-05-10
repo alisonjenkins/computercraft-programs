@@ -27,7 +27,10 @@ Each program lives in its own directory with a `README.md` and entry-point Lua f
 - **`treefarm/`** — `monitor.lua` watches a Create-saw farm, alerts on jam / low saplings via chat box.
 - **`storage/`** — `controller.lua` indexes a chest network, serves chat-driven `!give` / `!find` / `!list`.
 - **`builder/`** — `builder.lua` runs on a plain turtle, places blocks layer-by-layer from `schemas/*.lua`.
-- **`mining/`** — `miner.lua` runs on a mining turtle, branch-mines with auto-refuel, vein follow, and resume across reboots.
+- **`mining/`** — three turtle programs sharing `pos.lua` / `state.lua` / `filter.lua`:
+  - `miner.lua` — branch mining (smart 1×1 default, `--tall` for 1×3 walkable), auto-refuel, vein follow, resume across reboots.
+  - `digdown.lua` — vertical 1×1 ladder shaft, lava/water aware (plug + dig).
+  - `room.lua` — layer-by-layer rectangular-room excavator. State tagged `program="room"` so it can't collide with `miner.lua` saves.
 - **`lib/`** — shared helpers: `inv.lua` (inventory ops), `log.lua` (chat + monitor + term sink).
 
 Each program's `README.md` lists the exact peripherals it expects (by type string, snake_case for 1.21.1) and the in-game wiring required.
@@ -47,7 +50,7 @@ wget run https://raw.githubusercontent.com/<user>/computercraft-programs/master/
 pastebin run <id> storage
 ```
 
-Programs known to the installer: `storage`, `treefarm`, `builder`, `smelter`. Manifest of files per program lives in the `PROGRAMS` table at the top of `install.lua` — when adding a new program, add an entry there.
+Programs known to the installer: `storage`, `treefarm`, `builder`, `smelter`, `mining` (bundles `miner.lua` + `digdown.lua` + `room.lua` + the shared `mining/{pos,state,filter}.lua`). Manifest of files per program lives in the `PROGRAMS` table at the top of `install.lua` — when adding a new program, add an entry there.
 
 `--autostart <program>` writes a `/startup.lua` so the program runs on every boot.
 

@@ -118,33 +118,58 @@ local function handleGive(state, args, user)
         return
     end
 
+    local q = table.concat(queryTokens, " ")
+    log_lib.info("give: q=%q count=%d", q, count)
+
     local matches = index.matchNames(idx, queryTokens)
+    local matchCount = 0 ; for _ in pairs(matches) do matchCount = matchCount + 1 end
     local ranked  = index.rankSort(matches, index.tokenize(queryTokens))
     -- Only pull from the single best-ranked item. Avoids "andesite" pulling
     -- andesite_funnel slots when minecraft:andesite is also stocked.
     local pickedName
     local total = 0
+    local attempts, zeroPushes = 0, 0
     if ranked[1] then
         local entry = ranked[1].entry
         pickedName  = ranked[1].name
+        log_lib.info("give: matches=%d picked=%s locations=%d total_in_idx=%d",
+            matchCount, pickedName, #entry.locations, entry.total)
         for _, loc in ipairs(entry.locations) do
             if total >= count then break end
             local from = peripheral.wrap(loc.chest)
-            if from then
+            if not from then
+                log_lib.warn("give: peripheral.wrap(%s) returned nil", loc.chest)
+            else
+                attempts = attempts + 1
                 local moved, err = safePush(from, CONFIG.delivery_chest, loc.slot, count - total)
                 total = total + moved
+                if moved == 0 then zeroPushes = zeroPushes + 1 end
+                log_lib.info("give: push %s slot=%d req=%d moved=%d%s",
+                    loc.chest, loc.slot, count - total + moved, moved,
+                    err and (" err=" .. tostring(err)) or "")
                 if err then log_lib.warn("push from %s: %s", loc.chest, tostring(err)) end
             end
         end
+    else
+        log_lib.info("give: no matches for %q", q)
     end
+    log_lib.info("give: done attempts=%d zero_pushes=%d total=%d/%d",
+        attempts, zeroPushes, total, count)
     if total > 0 then
         -- Refresh index now: emptied slots stay in entry.locations otherwise,
         -- and the next !give for the same item walks dead locations and
         -- reports "nothing matched" until the 60s periodic reindex fires.
         state.idx = index.build(state.invs)
         delivered(chat, user, pickedName, total)
+    elseif pickedName then
+        -- Match found but nothing moved: usually delivery chest full or
+        -- destination peripheral name not on the network.
+        sendLines(chat, user, {
+            ("matched %s but moved 0 — delivery chest full or %s unreachable?"):format(
+                pickedName, CONFIG.delivery_chest),
+        })
     else
-        delivered(chat, user, table.concat(queryTokens, " "), 0)
+        delivered(chat, user, q, 0)
     end
 end
 

@@ -91,15 +91,16 @@ local function sendLines(chat, user, lines)
     end
 end
 
-local function delivered(chat, user, name, count, total)
+local function delivered(chat, user, name, total)
     if total > 0 then
-        chat.sendMessageToPlayer(("delivered %d × %s"):format(count, name), user, "storage")
+        sendLines(chat, user, { ("delivered %d × %s"):format(total, name) })
     else
-        chat.sendMessageToPlayer(("nothing matched %q"):format(name), user, "storage")
+        sendLines(chat, user, { ("nothing matched %q"):format(name) })
     end
 end
 
-local function handleGive(chat, idx, args, user)
+local function handleGive(state, args, user)
+    local chat, idx = state.chat, state.idx
     -- Last arg is the count if numeric; everything before it is the query.
     local count = 1
     local queryTokens = {}
@@ -137,9 +138,13 @@ local function handleGive(chat, idx, args, user)
         end
     end
     if total > 0 then
-        delivered(chat, user, pickedName, total, total)
+        -- Refresh index now: emptied slots stay in entry.locations otherwise,
+        -- and the next !give for the same item walks dead locations and
+        -- reports "nothing matched" until the 60s periodic reindex fires.
+        state.idx = index.build(state.invs)
+        delivered(chat, user, pickedName, total)
     else
-        delivered(chat, user, table.concat(queryTokens, " "), 0, 0)
+        delivered(chat, user, table.concat(queryTokens, " "), 0)
     end
 end
 
@@ -202,16 +207,22 @@ local function chatLoop(state)
             local _, user, msg = table.unpack(ev)
             if isAuthed(user) then
                 local cmd, args = commands.parse(msg)
-                if cmd == "give"     then handleGive(state.chat, state.idx, args, user)
-                elseif cmd == "find" then handleFind(state.chat, state.idx, args, user)
-                elseif cmd == "list" then handleList(state.chat, state.idx, args, user)
-                elseif cmd == "reindex" then
-                    state.invs = discoverStorageInventories()
-                    state.idx  = index.build(state.invs)
-                    sendLines(state.chat, user, { "reindexed" })
-                elseif cmd == "help" then
-                    sendLines(state.chat, user, commands.help())
-                end
+                -- Wrap dispatch: a chat_box throw (rate limit, peripheral
+                -- detach mid-send) must not kill chatLoop and silently end
+                -- parallel.waitForAny.
+                local ok, err = pcall(function()
+                    if cmd == "give"     then handleGive(state, args, user)
+                    elseif cmd == "find" then handleFind(state.chat, state.idx, args, user)
+                    elseif cmd == "list" then handleList(state.chat, state.idx, args, user)
+                    elseif cmd == "reindex" then
+                        state.invs = discoverStorageInventories()
+                        state.idx  = index.build(state.invs)
+                        sendLines(state.chat, user, { "reindexed" })
+                    elseif cmd == "help" then
+                        sendLines(state.chat, user, commands.help())
+                    end
+                end)
+                if not ok then log_lib.warn("handler %s: %s", tostring(cmd), tostring(err)) end
             end
         elseif ev[1] == "timer" and ev[2] == reindexAt then
             state.invs = discoverStorageInventories()

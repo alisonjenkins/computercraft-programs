@@ -1,24 +1,107 @@
 local M = {}
 
+-- Display-name cache, keyed by registry name (e.g. "minecraft:cobblestone").
+-- getItemDetail is the slowest CC inventory call (~50ms per slot, full NBT).
+-- Building the index for N chests × 27 slots used to call it once per slot
+-- on every rebuild — multiple seconds of blocking on every !give. By caching
+-- across rebuilds we pay the cost once per never-before-seen item name and
+-- reuse it forever.
+local DISPLAY_NAME = {}
+
+function M.cachedDisplayName(name) return DISPLAY_NAME[name] end
+
 function M.build(invs)
+    -- 1. Fan out list() calls so each chest yields concurrently against
+    --    the server tick instead of serializing.
+    local lists = {}
+    local fetchers = {}
+    for i, e in ipairs(invs) do
+        fetchers[i] = function() lists[i] = e.inv.list() end
+    end
+    if #fetchers > 0 then parallel.waitForAll(table.unpack(fetchers)) end
+
+    -- 2. Build the index from the parallel-fetched lists. Detect any item
+    --    names not in the displayName cache so we can fan out
+    --    getItemDetail calls for just those (instead of every slot).
     local idx = {}
-    for _, e in ipairs(invs) do
-        for slot, item in pairs(e.inv.list()) do
-            local entry = idx[item.name] or { total = 0, locations = {}, displayName = nil }
-            entry.total = entry.total + item.count
-            entry.locations[#entry.locations + 1] = {
-                chest = e.name,
-                slot  = slot,
-                count = item.count,
-            }
-            if not entry.displayName then
-                local d = e.inv.getItemDetail(slot)
-                if d then entry.displayName = d.displayName end
+    local pendingDetail = {}  -- list of { invIdx=..., slot=..., name=... }
+    for i, e in ipairs(invs) do
+        local list = lists[i]
+        if list then
+            for slot, item in pairs(list) do
+                local entry = idx[item.name] or {
+                    total = 0,
+                    locations = {},
+                    displayName = DISPLAY_NAME[item.name],
+                }
+                entry.total = entry.total + item.count
+                entry.locations[#entry.locations + 1] = {
+                    chest = e.name,
+                    slot  = slot,
+                    count = item.count,
+                }
+                idx[item.name] = entry
+                if not entry.displayName then
+                    pendingDetail[#pendingDetail + 1] = {
+                        invIdx = i, slot = slot, name = item.name,
+                    }
+                end
             end
-            idx[item.name] = entry
         end
     end
+
+    -- 3. Fan out getItemDetail for unseen names only — at most one per
+    --    distinct item name, parallelized.
+    if #pendingDetail > 0 then
+        local seenNames = {}
+        local fns = {}
+        for _, p in ipairs(pendingDetail) do
+            if not seenNames[p.name] then
+                seenNames[p.name] = true
+                local invIdx, slot, name = p.invIdx, p.slot, p.name
+                fns[#fns + 1] = function()
+                    local d = invs[invIdx].inv.getItemDetail(slot)
+                    if d and d.displayName then
+                        DISPLAY_NAME[name] = d.displayName
+                    end
+                end
+            end
+        end
+        if #fns > 0 then parallel.waitForAll(table.unpack(fns)) end
+        for name, entry in pairs(idx) do
+            if not entry.displayName then
+                entry.displayName = DISPLAY_NAME[name]
+            end
+        end
+    end
+
     return idx
+end
+
+-- Decrement an item's stock at a specific (chest, slot) by `count`. Used
+-- by !give to keep the index honest after a successful pull, without
+-- triggering a full rebuild.
+function M.recordWithdrawal(idx, itemName, chest, slot, count)
+    local entry = idx[itemName]
+    if not entry then return end
+    entry.total = entry.total - count
+    -- Find and decrement the matching location. We may have multiple
+    -- entries for the same chest+slot if the index was built across
+    -- chest changes; iterate all matches.
+    local kept = {}
+    local left = count
+    for _, loc in ipairs(entry.locations) do
+        if loc.chest == chest and loc.slot == slot and left > 0 then
+            local take = math.min(left, loc.count)
+            loc.count = loc.count - take
+            left = left - take
+        end
+        if loc.count > 0 then kept[#kept + 1] = loc end
+    end
+    entry.locations = kept
+    if entry.total <= 0 or #entry.locations == 0 then
+        idx[itemName] = nil
+    end
 end
 
 -- Tokenise a query into lowercase non-empty tokens.

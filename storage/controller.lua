@@ -129,6 +129,9 @@ local function handleGive(state, args, user)
     local pickedName
     local total = 0
     local attempts, zeroPushes = 0, 0
+    -- Record per-location withdrawals so we can apply them incrementally
+    -- to the index instead of triggering a full rebuild after.
+    local withdrawals = {}
     if ranked[1] then
         local entry = ranked[1].entry
         pickedName  = ranked[1].name
@@ -144,6 +147,9 @@ local function handleGive(state, args, user)
                 local moved, err = safePush(from, CONFIG.delivery_chest, loc.slot, count - total)
                 total = total + moved
                 if moved == 0 then zeroPushes = zeroPushes + 1 end
+                if moved > 0 then
+                    withdrawals[#withdrawals + 1] = { chest = loc.chest, slot = loc.slot, count = moved }
+                end
                 log_lib.info("give: push %s slot=%d req=%d moved=%d%s",
                     loc.chest, loc.slot, count - total + moved, moved,
                     err and (" err=" .. tostring(err)) or "")
@@ -156,10 +162,12 @@ local function handleGive(state, args, user)
     log_lib.info("give: done attempts=%d zero_pushes=%d total=%d/%d",
         attempts, zeroPushes, total, count)
     if total > 0 then
-        -- Refresh index now: emptied slots stay in entry.locations otherwise,
-        -- and the next !give for the same item walks dead locations and
-        -- reports "nothing matched" until the 60s periodic reindex fires.
-        state.idx = index.build(state.invs)
+        -- Apply withdrawals incrementally instead of rebuilding the whole
+        -- index — for N chests × 27 slots, full rebuild is O(N) yields and
+        -- was the dominant source of post-give lag.
+        for _, w in ipairs(withdrawals) do
+            index.recordWithdrawal(state.idx, pickedName, w.chest, w.slot, w.count)
+        end
         delivered(chat, user, pickedName, total)
     elseif pickedName then
         -- Match found but nothing moved: usually delivery chest full or

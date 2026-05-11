@@ -219,8 +219,22 @@ local function ingestOnce(invs)
     if not CONFIG.input_chest then return 0 end
     local input = peripheral.wrap(CONFIG.input_chest)
     if not input then return 0 end
+    -- input.list() can throw (peripheral detached mid-tick) or return nil
+    -- (peripheral wrap is stale). Tolerate both rather than kill the
+    -- ingest loop — the parallel chatLoop must keep running.
+    local ok, listing = pcall(input.list)
+    if not ok then
+        log_lib.warn("ingest: %s.list() errored: %s",
+            tostring(CONFIG.input_chest), tostring(listing))
+        return 0
+    end
+    if type(listing) ~= "table" then
+        log_lib.warn("ingest: %s.list() returned %s — input chest detached?",
+            tostring(CONFIG.input_chest), type(listing))
+        return 0
+    end
     local total_moved = 0
-    for slot, item in pairs(input.list()) do
+    for slot, item in pairs(listing) do
         local remaining = item.count
         for _, target in ipairs(invs) do
             if remaining <= 0 then break end

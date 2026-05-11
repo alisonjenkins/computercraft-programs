@@ -356,6 +356,31 @@ end
 local function digDownStep() plugIfLavaDown() ; moveDown() end
 local function digUpStep()   plugIfLavaUp()   ; moveUp()   end
 
+-- ── status / progress ─────────────────────────────────────────────────────
+
+-- Approximate cell-count progress. The +1 in `in_col` accounts for the
+-- entry cell already mined when col_progress=0; at the very start of a
+-- fresh run (turtle still at home, no cells mined) this overstates by 1.
+-- We clamp to [0, total] for display sanity.
+local function progressString()
+    local L, W, H = args.length, args.width, args.height
+    local total = L * W * H
+    local layer = SAVED.layer or 1
+    local col   = SAVED.col   or 0
+    local prog  = SAVED.col_progress or 0
+    local done  = (layer - 1) * L * W + col * L + 1 + prog
+    if done > total then done = total end
+    if done < 0    then done = 0    end
+    local pct = (total > 0) and math.floor(100 * done / total) or 0
+    return ("layer %d/%d  col %d/%d  step %d/%d  cells %d/%d (%d%%)  fuel=%s")
+        :format(layer, H, col + 1, W, prog, L - 1, done, total, pct,
+                tostring(turtle.getFuelLevel()))
+end
+
+local function printStatus(prefix)
+    print((prefix or "status: ") .. progressString())
+end
+
 -- ── core sweep ────────────────────────────────────────────────────────────
 
 local function bailoutIfLow()
@@ -382,6 +407,9 @@ local function sweepColumn(start_progress)
         digForwardStep()
         SAVED.col_progress = k
         persist()
+        -- Heartbeat every 16 sweep steps so the terminal shows movement
+        -- without spamming a line per cell.
+        if k % 16 == 0 then printStatus("  ") end
     end
     return true
 end
@@ -428,6 +456,7 @@ local function sweepLayer()
         local complete = sweepColumn(SAVED.col_progress)
         if not complete then return false end
         SAVED.col_progress = 0
+        printStatus("  column done: ")
         if col < args.width - 1 then
             dir = stepToNextColumn(dir)
         end
@@ -520,9 +549,12 @@ local function run()
         args.sweep_left = SAVED.args.sweep_left == true
         args.dig_up     = SAVED.args.dig_up     == true
         if not validateArgs() then usage() ; return end
-        print(("resumed at (%d,%d,%d %s) layer=%d col=%d progress=%d")
-            :format(p.x, p.y, p.z, p.facing,
-                SAVED.layer or 1, SAVED.col or 0, SAVED.col_progress or 0))
+        print(("resumed at (%d,%d,%d %s)"):format(p.x, p.y, p.z, p.facing))
+        print(("  args: %dL x %dW x %dH  width=%s height=%s")
+            :format(args.length, args.width, args.height,
+                args.sweep_left and "left" or "right",
+                args.dig_up     and "up"   or "down"))
+        printStatus("  ")
         reconcilePendingMove()
     else
         if not validateArgs() then usage() ; return end
@@ -547,10 +579,11 @@ local function run()
         p = pos.new()
         state.clear()
         persist()
-        print(("starting fresh: %dL x %dW x %dH  width=%s height=%s")
+        print(("starting fresh: %dL x %dW x %dH  width=%s height=%s  total=%d cells")
             :format(args.length, args.width, args.height,
                 args.sweep_left and "left" or "right",
-                args.dig_up     and "up"   or "down"))
+                args.dig_up     and "up"   or "down",
+                args.length * args.width * args.height))
     end
 
     -- Pre-flight: top up fuel before starting.
@@ -590,12 +623,14 @@ local function run()
                     print("room complete — state cleared")
                     return
                 end
+                printStatus(("layer %d/%d done — descending: "):format(SAVED.layer, args.height))
                 descendToNextLayer()
                 SAVED.layer = SAVED.layer + 1
                 SAVED.col = 0
                 SAVED.col_progress = 0
                 SAVED.col_dir = "north"
                 persist()
+                printStatus(("layer %d/%d starting: "):format(SAVED.layer, args.height))
             end
         end
     end

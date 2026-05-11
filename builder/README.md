@@ -93,14 +93,20 @@ python3 tools/schematic_to_lua.py mywall.nbt builder/schemas/mywall.lua --orient
 
 Then push the resulting `.lua` to GitHub (the installer fetches files from raw GitHub) or copy directly onto the turtle's `builder/schemas/` directory via `wget` / floppy disk.
 
-**Limitations of the converter:**
+**What's preserved:**
 
-- Block **properties** (stair facing, slab top/bottom, log axis, fence connections) are dropped. The turtle calls `placeDown()` with no orientation control, so stairs come out facing a default direction. For solid-block builds this is fine; for decorative builds with directional blocks the result will be rotated wrong.
-- **Tile entities** (chest contents, sign text, banner patterns) are not preserved — the block is placed but its NBT is empty.
-- **Double-block placements** (beds, doors, tall flowers) are not handled — the turtle places only the lower half.
-- **Entities** in the schematic are skipped entirely.
+- **Horizontal `facing`** for stairs, doors (lower half), repeaters, comparators, observers, chests, furnaces, hoppers pointed at a cardinal direction. The converter records the property in the palette entry; the builder turns the turtle to the opposite cardinal before `placeDown` so the placed block ends up with the right facing.
+- Other blockstate fields (`shape`, `waterlogged`, `power`, etc.) are recorded but the turtle has no way to honour them — `shape` for stairs ("inner/outer corner") auto-resolves from neighbour blocks once placed.
 
-For complex builds, the schematic is best treated as a structural skeleton — fire the turtle for walls/floors/ceilings, then decorate by hand or with a Create Schematicannon.
+**Still dropped / broken:**
+
+- **Axis-based blocks** (logs / pillars / chains with `axis = x` or `axis = z`) — the turtle places from above with `placeDown`, which always gives `axis = y`. Use placeable filler blocks if axis matters.
+- **Top half slabs** (`half = top`) — `placeDown` always produces bottom half. The whole geometry would need to flip (place from below with `placeUp`).
+- **Tile entities** (chest contents, sign text, banner patterns) — block placed, contents empty.
+- **Double-block placements** (beds, doors, tall flowers, pistons-with-arm-out) — only the lower half is placed.
+- **Entities** in the schematic — skipped.
+
+For complex builds, the schematic is best treated as a structural skeleton — fire the turtle for walls / floors / ceilings / stair runs, then decorate by hand or fire the rest with a Create Schematicannon (which preserves everything but eats more materials per tick).
 
 ## Setup
 

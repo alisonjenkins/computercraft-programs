@@ -60,6 +60,49 @@ def lua_string(s: str) -> str:
     return f'"{escaped}"'
 
 
+# 90° CW rotation table for horizontal cardinal directions.
+_FACING_CW = {"north": "east", "east": "south", "south": "west", "west": "north"}
+
+
+def rotate_facing(value: str, steps: int) -> str:
+    """Rotate a `facing` property value `steps × 90°` clockwise (top-down).
+    Pass-through for any value that isn't a cardinal direction."""
+    if value not in _FACING_CW:
+        return value
+    for _ in range(steps % 4):
+        value = _FACING_CW[value]
+    return value
+
+
+# Axis-based blocks (logs, pillars, chains) rotate differently — swap x ↔ z
+# on 90/270, identity on 0/180.
+_AXIS_CW = {"x": "z", "z": "x"}
+
+
+def rotate_axis(value: str, steps: int) -> str:
+    if (steps % 2 == 1) and value in _AXIS_CW:
+        return _AXIS_CW[value]
+    return value
+
+
+# Which property keys we actually rotate when --orient is used. Other props
+# (half, shape, waterlogged, …) are pass-through.
+_ROTATABLE_PROPS = {
+    "facing": rotate_facing,
+    "axis": rotate_axis,
+    # door / chest "hinge" doesn't rotate cleanly because the meaning flips with
+    # facing; leave alone — half-broken for doors is the existing limitation.
+}
+
+
+def transform_properties(props: dict[str, str], steps: int) -> dict[str, str]:
+    out = {}
+    for k, v in props.items():
+        fn = _ROTATABLE_PROPS.get(k)
+        out[k] = fn(v, steps) if fn else v
+    return out
+
+
 def parse_orient(value: str) -> int:
     """Normalise an --orient value to a 90° step count in [0, 3]."""
     try:
@@ -104,10 +147,16 @@ def convert(src: Path, dst: Path, orient: int = 0) -> None:
     W, H, L = int(size[0]), int(size[1]), int(size[2])
 
     palette_raw = list(root["palette"])
-    palette_names: list[str] = []
+    palette_entries: list[tuple[str, dict[str, str]]] = []
     for entry in palette_raw:
         name = str(entry["Name"])
-        palette_names.append(name)
+        props: dict[str, str] = {}
+        if "Properties" in entry:
+            for k, v in entry["Properties"].items():
+                props[str(k)] = str(v)
+        if orient:
+            props = transform_properties(props, orient)
+        palette_entries.append((name, props))
 
     # Apply rotation to size; cells are rotated as they're placed below.
     _, _, rotW, rotL = rotate(0, 0, W, L, orient)
@@ -134,12 +183,21 @@ def convert(src: Path, dst: Path, orient: int = 0) -> None:
     with dst.open("w", encoding="utf-8") as f:
         f.write(f"-- Auto-generated from {src.name} by tools/schematic_to_lua.py\n")
         f.write(f"-- Size: {W} (W) × {H} (H) × {L} (L)\n")
-        f.write(f"-- Palette entries: {len(palette_names)}\n")
+        f.write(f"-- Palette entries: {len(palette_entries)}\n")
         f.write("return {\n")
         f.write(f"    size = {{ width = {W}, height = {H}, length = {L} }},\n")
         f.write("    palette = {\n")
-        for i, name in enumerate(palette_names, start=1):
-            f.write(f"        [{i}] = {lua_string(name)},\n")
+        for i, (name, props) in enumerate(palette_entries, start=1):
+            if not props:
+                f.write(f"        [{i}] = {lua_string(name)},\n")
+            else:
+                prop_pairs = ", ".join(
+                    f"{k} = {lua_string(v)}" for k, v in props.items()
+                )
+                f.write(
+                    f"        [{i}] = {{ name = {lua_string(name)}, "
+                    f"properties = {{ {prop_pairs} }} }},\n"
+                )
         f.write("    },\n")
         f.write("    layers = {\n")
         for y in range(H):
@@ -153,9 +211,11 @@ def convert(src: Path, dst: Path, orient: int = 0) -> None:
         f.write("}\n")
 
     orient_label = orient * 90
+    n_oriented = sum(1 for _, p in palette_entries if p)
     print(
         f"wrote {dst} — {W}×{H}×{L} = {W*H*L} cells, "
-        f"{len(palette_names)} palette entries, rotated {orient_label}° CW"
+        f"{len(palette_entries)} palette entries "
+        f"({n_oriented} with properties), rotated {orient_label}° CW"
     )
 
 

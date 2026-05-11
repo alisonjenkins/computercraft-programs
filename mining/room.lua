@@ -126,41 +126,87 @@ local function plugIfLavaDown()
     return true
 end
 
+local SAVED = {}
+local function persist() SAVED.pos = pos.copy(p) ; state.save(SAVED) end
+
+-- Pre-commit pattern for moves. The race we're closing:
+--   1. turtle.forward()      <- physically moves
+--   2. pos.advance(p)        <- in-memory update
+--   3. state.save(SAVED)     <- disk update
+-- If the turtle is unloaded / hard-stopped between 1 and 3, disk says
+-- old pos but turtle is at new pos. Resume believes turtle is 1 block
+-- behind reality → entire room shifts 1 in the move direction.
+--
+-- Mitigation: set SAVED.pending_move and save BEFORE the move; clear it
+-- and save the new pos atomically AFTER. On resume, reconcile by
+-- probing whether the cell ahead/above/below is solid — for room.lua
+-- the cell ahead was just dug, so post-move it's the next-mine cell
+-- (solid stone in typical use). detect() distinguishes pre- vs post-move.
 local function moveForward()
     plugIfLavaForward()
+    SAVED.pending_move = "forward" ; state.save(SAVED)
     while not turtle.forward() do
         if turtle.detect() then turtle.dig()
         else turtle.attack() end
         sleep(0.1)
     end
     pos.advance(p)
+    SAVED.pending_move = nil ; persist()
 end
 
 local function moveUp()
     plugIfLavaUp()
+    SAVED.pending_move = "up" ; state.save(SAVED)
     while not turtle.up() do
         if turtle.detectUp() then turtle.digUp()
         else turtle.attackUp() end
         sleep(0.1)
     end
     pos.up(p)
+    SAVED.pending_move = nil ; persist()
 end
 
 local function moveDown()
     plugIfLavaDown()
+    SAVED.pending_move = "down" ; state.save(SAVED)
     while not turtle.down() do
         if turtle.detectDown() then turtle.digDown()
         else turtle.attackDown() end
         sleep(0.1)
     end
     pos.down(p)
+    SAVED.pending_move = nil ; persist()
 end
 
 local function turnLeft()  turtle.turnLeft()  ; pos.turn(p, "left")  end
 local function turnRight() turtle.turnRight() ; pos.turn(p, "right") end
 
-local SAVED = {}
-local function persist() SAVED.pos = pos.copy(p) ; state.save(SAVED) end
+-- Reconcile a half-committed move recorded in SAVED.pending_move. Probe
+-- the cell in the move direction: room.lua always pre-digs the cell
+-- before moving into it, so PRE-move that cell is air (detect=false) and
+-- POST-move the cell ahead/up/down has rolled to the *next* unmined
+-- cell (detect=true in solid stone). In a cave the signal is ambiguous
+-- and we conservatively assume the move didn't happen (manual edit of
+-- /.miner_state is the escape valve).
+local function reconcilePendingMove()
+    if not SAVED.pending_move then return end
+    local kind = SAVED.pending_move
+    local probe, advance
+    if     kind == "forward" then probe, advance = turtle.detect,     function() pos.advance(p) end
+    elseif kind == "up"      then probe, advance = turtle.detectUp,   function() pos.up(p) end
+    elseif kind == "down"    then probe, advance = turtle.detectDown, function() pos.down(p) end
+    end
+    if probe and probe() then
+        advance()
+        print(("resume: pending %s appears to have completed — advanced pos to (%d,%d,%d)")
+            :format(kind, p.x, p.y, p.z))
+    else
+        print(("resume: pending %s appears not to have completed — pos kept (%d,%d,%d)")
+            :format(kind, p.x, p.y, p.z))
+    end
+    SAVED.pending_move = nil
+    persist()
+end
 
 local function turnTo(target)
     local cur = pos.faceIndex(p)
@@ -477,6 +523,7 @@ local function run()
         print(("resumed at (%d,%d,%d %s) layer=%d col=%d progress=%d")
             :format(p.x, p.y, p.z, p.facing,
                 SAVED.layer or 1, SAVED.col or 0, SAVED.col_progress or 0))
+        reconcilePendingMove()
     else
         if not validateArgs() then usage() ; return end
         if loaded and loaded.program ~= STATE_TAG then

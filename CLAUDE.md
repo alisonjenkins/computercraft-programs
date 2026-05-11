@@ -26,12 +26,18 @@ Each program own directory with `README.md` + entry-point Lua file. Bootstrap on
 - **`smelter.lua`** (root) — vanilla furnace auto-feeder. Original worked example.
 - **`treefarm/`** — `monitor.lua` watches Create-saw farm, alerts on jam / low saplings via chat box.
 - **`storage/`** — `controller.lua` indexes chest network, serves chat-driven `!give` / `!find` / `!list`.
-- **`builder/`** — `builder.lua` runs on plain turtle, places blocks layer-by-layer from `schemas/*.lua`.
+- **`builder/`** — `builder.lua` runs on plain turtle, places blocks layer-by-layer from `schemas/*.lua`. Accepts two schema formats: legacy char-palette (`["C"] = "minecraft:cobblestone"` + rows of strings) and NBT-derived (size + indexed palette + rows of palette-index tables, produced by `tools/schematic_to_lua.py`).
 - **`mining/`** — three turtle programs sharing `pos.lua` / `state.lua` / `filter.lua`:
   - `miner.lua` — branch mining (smart 1×1 default, `--tall` for 1×3 walkable), auto-refuel, vein follow, resume across reboots.
   - `digdown.lua` — vertical 1×1 ladder shaft, lava/water aware (plug + dig).
   - `room.lua` — layer-by-layer rectangular-room excavator. State tagged `program="room"` so can't collide with `miner.lua` saves.
 - **`lib/`** — shared helpers: `inv.lua` (inventory ops), `log.lua` (chat + monitor + term sink).
+
+## Host-side tools (`tools/`)
+
+Run on the user's Mac, not on a CC computer. Output gets committed and consumed by turtle programs.
+
+- **`tools/schematic_to_lua.py`** — converts vanilla / Create `.nbt` structure schematics → Lua schema for `builder.lua`. Needs `pip install nbtlib`. Supports `--orient 0|90|180|270` to rotate around Y axis before emit. Block properties (stair facing, log axis) are dropped; tile entities + entities skipped; double-block placements (beds, doors) place only lower half. Best for structural skeletons; use Create Schematicannon for finely-decorated builds.
 
 Each program's `README.md` lists exact peripherals expected (by type string, snake_case for 1.21.1) and in-game wiring required.
 

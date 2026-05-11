@@ -79,9 +79,10 @@ CodeCache pressure: open `%APPDATA%\.minecraft\logs\latest.log` (or instance-spe
 ### Prism Launcher
 
 1. Right-click instance → `Edit`.
-2. `Settings` → `Java`.
-3. Tick `Java arguments` (override global), paste the args.
-4. `Apply`. Restart instance.
+2. `Settings` → `Java` → `Memory`.
+3. Set `Minimum memory allocation` and `Maximum memory allocation` to **8192** (match `-Xms` / `-Xmx` above) via the GUI.
+4. Tick `Java arguments` (override global), paste the args **with `-Xms` and `-Xmx` removed** — Prism injects those from the memory sliders. Leaving them in the args string duplicates the flag and the JVM rejects launch.
+5. `Apply`. Restart instance.
 
 ### CurseForge Launcher
 

@@ -22,6 +22,10 @@ Paste into PrismLauncher → Edit Instance → Settings → Java → JVM argumen
 
 Tune `-Xmx` to fit. 8 GB is comfortable for Arkana on a 16 GB Mac.
 
+**PrismLauncher users:** **omit `-Xms` and `-Xmx` from the args string**. Prism injects those from its `Settings → Java → Memory` sliders. Set the sliders to **8192** (min and max) and paste the rest of the args without those two flags. Leaving them in the args string duplicates the flag and the JVM rejects launch.
+
+**CurseForge users:** same — set the `Minecraft Maximum RAM` slider to 8192 and paste the args without `-Xms` / `-Xmx`.
+
 ## Why these flags
 
 | Flag | What it does |

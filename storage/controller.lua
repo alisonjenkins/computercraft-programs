@@ -143,17 +143,27 @@ local function handleGive(state, args, user)
             if not from then
                 log_lib.warn("give: peripheral.wrap(%s) returned nil", loc.chest)
             else
-                attempts = attempts + 1
-                local moved, err = safePush(from, CONFIG.delivery_chest, loc.slot, count - total)
-                total = total + moved
-                if moved == 0 then zeroPushes = zeroPushes + 1 end
-                if moved > 0 then
+                -- Drain this location: some inventory backends (especially
+                -- Sophisticated Storage's Storage Controller pseudo-slots)
+                -- cap a single pushItems() to one source stack even when the
+                -- logical slot holds more. Loop until pushItems returns 0
+                -- or the request is filled. Bounded — moved>0 strictly
+                -- decreases (count - total) so finite iterations.
+                while total < count do
+                    attempts = attempts + 1
+                    local req = count - total
+                    local moved, err = safePush(from, CONFIG.delivery_chest, loc.slot, req)
+                    log_lib.info("give: push %s slot=%d req=%d moved=%d%s",
+                        loc.chest, loc.slot, req, moved,
+                        err and (" err=" .. tostring(err)) or "")
+                    if err then log_lib.warn("push from %s: %s", loc.chest, tostring(err)) end
+                    if moved == 0 then
+                        zeroPushes = zeroPushes + 1
+                        break
+                    end
+                    total = total + moved
                     withdrawals[#withdrawals + 1] = { chest = loc.chest, slot = loc.slot, count = moved }
                 end
-                log_lib.info("give: push %s slot=%d req=%d moved=%d%s",
-                    loc.chest, loc.slot, count - total + moved, moved,
-                    err and (" err=" .. tostring(err)) or "")
-                if err then log_lib.warn("push from %s: %s", loc.chest, tostring(err)) end
             end
         end
     else

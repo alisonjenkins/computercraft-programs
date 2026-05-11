@@ -43,6 +43,7 @@ Advanced Peripherals switched type strings from camelCase to snake_case **at MC 
 | Get program ideas for this pack | `program-ideas.md` |
 | Look up a recipe (CC:T / AP / CC:C Bridge / Create / SS) | `recipes.md` |
 | Set up rotational power (early game) | `power.md` |
+| Tune JVM args for the client on macOS Apple Silicon | `client-jvm.md` |
 
 ## Upstream docs (linked, not mirrored)
 

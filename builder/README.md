@@ -29,7 +29,9 @@ The turtle's facing at start = the row direction of layer rows. Layers are laid 
 
 ## Schema format
 
-Each schema is a Lua table:
+`builder.lua` accepts **two formats**. The legacy hand-written format is easier to author; the NBT-derived format is what you get when converting a Create / Minecraft `.nbt` schematic.
+
+### Format 1 — hand-written char-palette (legacy)
 
 ```lua
 return {
@@ -49,8 +51,52 @@ return {
 Rules:
 
 - Each layer is a list of rows; each row is a string. Row count and row length must match across layers.
-- A character in `palette` maps to a Minecraft item ID (`minecraft:` or modded). `nil` = leave air.
-- Schema files live in `builder/schemas/`. Example: `5x5x3-shed.lua`.
+- A character in `palette` maps to a Minecraft item ID. `nil` = leave air.
+
+### Format 2 — NBT-derived (from `.nbt` schematics)
+
+```lua
+return {
+    size = { width = W, height = H, length = L },
+    palette = {
+        [1] = "minecraft:stone",
+        [2] = "minecraft:oak_planks",
+        -- ...
+    },
+    layers = {
+        { { 1, 1, 2, 1 }, { 1, 0, 0, 1 }, ... },  -- y = 0, rows of palette indices
+        -- ...
+    },
+}
+```
+
+Rules:
+
+- `s.layers[y][z]` is a list of palette indices (1-based). `0` or out-of-palette = air.
+- Schema files live in `builder/schemas/`. Either format works.
+
+### Converting a `.nbt` schematic
+
+`tools/schematic_to_lua.py` (on your Mac, not on the turtle) reads vanilla / Create schematic files and emits the format-2 Lua. Use this for builds you sketched out in-game with the schematic-and-quill or exported from a Create Schematic Table.
+
+```
+# one-time setup
+pip install nbtlib
+
+# convert a schematic
+python3 tools/schematic_to_lua.py path/to/mywall.nbt builder/schemas/mywall.lua
+```
+
+Then push the resulting `.lua` to GitHub (the installer fetches files from raw GitHub) or copy directly onto the turtle's `builder/schemas/` directory via `wget` / floppy disk.
+
+**Limitations of the converter:**
+
+- Block **properties** (stair facing, slab top/bottom, log axis, fence connections) are dropped. The turtle calls `placeDown()` with no orientation control, so stairs come out facing a default direction. For solid-block builds this is fine; for decorative builds with directional blocks the result will be rotated wrong.
+- **Tile entities** (chest contents, sign text, banner patterns) are not preserved — the block is placed but its NBT is empty.
+- **Double-block placements** (beds, doors, tall flowers) are not handled — the turtle places only the lower half.
+- **Entities** in the schematic are skipped entirely.
+
+For complex builds, the schematic is best treated as a structural skeleton — fire the turtle for walls/floors/ceilings, then decorate by hand or with a Create Schematicannon.
 
 ## Setup
 

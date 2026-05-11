@@ -3,6 +3,30 @@
 -- Hardware: a supply chest one block above the turtle's start position.
 -- Usage: builder/builder.lua <schema-path>
 --   e.g. builder/builder.lua builder/schemas/5x5x3-shed.lua
+--
+-- Two schema formats accepted:
+--
+-- 1. Hand-written "char palette + string rows" (legacy):
+--      return {
+--          palette = { [" "] = nil, ["C"] = "minecraft:cobblestone", ... },
+--          layers  = {
+--              { "CCCCC", "C   C", ... },   -- layer y=0: rows of chars
+--              ...
+--          },
+--      }
+--
+-- 2. Auto-generated from a vanilla .nbt schematic via tools/schematic_to_lua.py:
+--      return {
+--          size    = { width = W, height = H, length = L },
+--          palette = { [1] = "minecraft:stone", [2] = "minecraft:oak_planks", ... },
+--          layers  = {
+--              { { 1, 1, 2, ... }, { ... }, ... },  -- layer y=0: rows of palette indices
+--              ...
+--          },
+--      }
+--
+-- The two are distinguished by whether `s.layers[1][1]` is a string (legacy)
+-- or a table (NBT-derived).
 
 package.path = package.path .. ";/disk/?.lua;/disk/?/init.lua;../?.lua"
 
@@ -18,9 +42,31 @@ local function loadSchema(path)
     return s
 end
 
-local function paletteOf(s, ch)
-    if ch == nil then return nil end
-    return s.palette[ch]
+-- Returns a function (x, z) → block_name (or nil for air) for the given
+-- layer index. Hides the difference between the two schema formats.
+local function layerLookup(s, layerIdx)
+    local layer = s.layers[layerIdx]
+    local firstRow = layer[1]
+    if type(firstRow) == "string" then
+        -- legacy char-grid format
+        return function(x, z)
+            local row = layer[z]
+            if not row then return nil end
+            local ch = row:sub(x, x)
+            return s.palette[ch]
+        end, #layer, function(z) return #layer[z] end
+    else
+        -- NBT-derived: each row is { idx, idx, ... }
+        return function(x, z)
+            local row = layer[z]
+            if not row then return nil end
+            local idx = row[x]
+            if not idx or idx == 0 then return nil end
+            local name = s.palette[idx]
+            if name == "minecraft:air" then return nil end
+            return name
+        end, #layer, function(z) return #layer[z] end
+    end
 end
 
 local function turtleSelectByName(name)
@@ -54,7 +100,7 @@ local function restockFromSupply()
 end
 
 local function placeBlock(name)
-    if not name then return true end
+    if not name then return true end                 -- air → skip
     if not turtleSelectByName(name) then
         return false, "missing material: " .. name
     end
@@ -78,13 +124,11 @@ local function safeMove(dir)
 end
 
 local function buildLayer(s, layerIdx)
-    local layer = s.layers[layerIdx]
-    local rows  = #layer
+    local lookup, rows, rowLen = layerLookup(s, layerIdx)
     for z = 1, rows do
-        local row = layer[z]
-        for x = 1, #row do
-            local ch    = row:sub(x, x)
-            local name  = paletteOf(s, ch)
+        local cols = rowLen(z)
+        for x = 1, cols do
+            local name    = lookup(x, z)
             local ok, err = placeBlock(name)
             if not ok then
                 print(("layer %d row %d col %d: %s"):format(layerIdx, z, x, err))
@@ -92,7 +136,7 @@ local function buildLayer(s, layerIdx)
                 ok = placeBlock(name)
                 assert(ok, "still missing material after restock")
             end
-            if x < #row then safeMove("forward") end
+            if x < cols then safeMove("forward") end
         end
         if z < rows then
             -- snake: alternate forward/back across rows
@@ -105,10 +149,22 @@ local function buildLayer(s, layerIdx)
     end
 end
 
+local function paletteSize(s)
+    local n = 0
+    for _ in pairs(s.palette) do n = n + 1 end
+    return n
+end
+
 local function run()
     local s = loadSchema(schemaPath)
-    print(("schema: %d layers, palette size %d")
-        :format(#s.layers, (function() local n=0; for _ in pairs(s.palette) do n=n+1 end; return n end)()))
+    if s.size then
+        print(("schema: %d × %d × %d  layers=%d  palette=%d  (NBT-derived)")
+            :format(s.size.width, s.size.height, s.size.length,
+                    #s.layers, paletteSize(s)))
+    else
+        print(("schema: %d layers, palette size %d  (legacy)")
+            :format(#s.layers, paletteSize(s)))
+    end
 
     -- Top up materials before starting.
     restockFromSupply()

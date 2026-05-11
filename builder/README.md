@@ -85,6 +85,10 @@ pip install nbtlib
 
 # convert a schematic
 python3 tools/schematic_to_lua.py path/to/mywall.nbt builder/schemas/mywall.lua
+
+# rotate around Y axis before emit (looking down, clockwise). Useful when the
+# in-game placement direction doesn't match the turtle's facing at start.
+python3 tools/schematic_to_lua.py mywall.nbt builder/schemas/mywall.lua --orient 90
 ```
 
 Then push the resulting `.lua` to GitHub (the installer fetches files from raw GitHub) or copy directly onto the turtle's `builder/schemas/` directory via `wget` / floppy disk.

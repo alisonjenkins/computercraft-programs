@@ -38,6 +38,7 @@ import argparse
 import json
 import re
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
@@ -242,30 +243,51 @@ def clear_state() -> None:
 # ──────────────────────────────────────────────────────────────────────────
 # Subcommands.
 
+def prismlauncher_running() -> bool:
+    """PrismLauncher rewrites instance.cfg on launch / shutdown, so it has to
+    be CLOSED before we mutate the file or our edits get reverted."""
+    try:
+        out = subprocess.check_output(["pgrep", "-lf", "PrismLauncher"], text=True)
+        return any("prismlauncher" in line.lower() for line in out.splitlines())
+    except subprocess.CalledProcessError:
+        return False
+
+
 def cmd_prepare(args: argparse.Namespace) -> None:
     if load_state() is not None:
         sys.exit(
-            "Existing profile state found — `restore` or `analyze` first."
+            "Existing profile state found — run `restore` (or `analyze`) first."
         )
+    if prismlauncher_running() and not args.force:
+        sys.exit(
+            "PrismLauncher.app is running. Quit it completely, then re-run "
+            "prepare. (Use --force to override at your own risk — PrismLauncher "
+            "may overwrite the edits we're about to make.)"
+        )
+
     cfg_path = Path(args.instance_cfg) if args.instance_cfg else find_instance_cfg()
-    cfg = read_cfg(cfg_path)
-    xmx = args.xmx
-    xms = args.xms or xmx
-    label = args.label or f"run-{xmx.lower()}"
+    label = args.label or f"run-{args.xmx.lower()}"
     log_path = Path("/tmp") / f"mc-heap-{label}.log"
     if log_path.exists():
         log_path.unlink()
 
-    existing_args = cfg.get("JvmArgs", "")
-    new_args = update_jvm_args(existing_args, xmx=xmx, xms=xms, log_path=log_path)
+    # Inject -Xlog via JAVA_TOOL_OPTIONS env var. PrismLauncher passes Env
+    # through verbatim when OverrideEnv=true, whereas it actively sanitises
+    # JvmArgs (-Xmx/-Xms get stripped, possibly -Xlog too). The env-var path
+    # survives.
+    #
+    # -Xmx is pinned via PrismLauncher's per-instance MinMemAlloc/MaxMemAlloc
+    # with OverrideMemory=true — those fields are PrismLauncher's official
+    # memory knobs and don't get rewritten.
+    xmx_mb = int(round(to_mb(args.xmx)))
+    tool_options = f"-Xlog:gc,gc+heap=info:file={log_path}::filecount=1,filesize=20M"
+    # JSON with no whitespace so PrismLauncher's INI parser doesn't need to
+    # quote the value — keeps the cfg line shape robust.
+    env_payload = json.dumps({"JAVA_TOOL_OPTIONS": tool_options}, separators=(",", ":"))
 
-    # Force PrismLauncher to honour our pinned -Xmx via OverrideMemory=true
-    # so its own MinMem/MaxMem doesn't fight our JvmArgs. We also pin its
-    # MinMemAlloc / MaxMemAlloc to match — belt and braces.
-    xmx_mb = int(round(to_mb(xmx)))
     updates = {
-        "JvmArgs": new_args,
-        "OverrideJavaArgs": "true",
+        "OverrideEnv": "true",
+        "Env": env_payload,
         "OverrideMemory": "true",
         "MinMemAlloc": str(xmx_mb),
         "MaxMemAlloc": str(xmx_mb),
@@ -275,12 +297,13 @@ def cmd_prepare(args: argparse.Namespace) -> None:
         "cfg_path": str(cfg_path),
         "label": label,
         "log_path": str(log_path),
-        "xmx": xmx,
+        "xmx": args.xmx,
         "old_values": old,
     })
-    print(f"prepared instance.cfg with -Xmx={xmx} -Xms={xms} (label={label})")
-    print(f"  GC log will be written to {log_path}")
-    print("now: launch MC via PrismLauncher, play >=10 min, quit cleanly")
+    print(f"prepared instance.cfg with -Xmx={args.xmx} (label={label})")
+    print(f"  GC log → {log_path}")
+    print(f"  injected JAVA_TOOL_OPTIONS={tool_options}")
+    print("now: launch PrismLauncher fresh, launch MC, play >=10 min, quit cleanly")
     print(f"then: python3 {Path(__file__).name} analyze")
 
 
@@ -348,9 +371,9 @@ def main() -> None:
 
     p_prep = sub.add_parser("prepare", help="inject GC logging + pin -Xmx")
     p_prep.add_argument("--xmx", required=True, help="target heap, e.g. 6G or 5120M")
-    p_prep.add_argument("--xms", default=None, help="initial heap (default: same as xmx)")
     p_prep.add_argument("--label", default=None, help="run label (default: run-<xmx>)")
     p_prep.add_argument("--instance-cfg", default=None, help="explicit path to instance.cfg")
+    p_prep.add_argument("--force", action="store_true", help="proceed even if PrismLauncher is running")
     p_prep.set_defaults(fn=cmd_prepare)
 
     p_an = sub.add_parser("analyze", help="parse GC log + report peaks")

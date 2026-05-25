@@ -30,6 +30,7 @@ local PROGRAMS = {
         "storage/controller.lua",
         "storage/index.lua",
         "storage/commands.lua",
+        "storage/defrag.lua",
     },
     treefarm = {
         "lib/inv.lua",

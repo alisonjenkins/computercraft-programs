@@ -49,6 +49,7 @@ See `packs/arkana-aeronautics/docs/recipes.md`.
 | `!find <name>` | Up to 5 matches with totals + location count |
 | `!give <name> <n>` | Move up to n of name into the delivery chest. Substring match. |
 | `!reindex` | Force full rescan of all chests |
+| `!defrag` | Merge partial stacks and group like items into the same chest. Respects per-slot capacity, so Sophisticated Storage stack-upgraded slots fill above 64 correctly. |
 | `!help` | List commands |
 
 The chat_box prefixes outgoing replies with `[storage]`.

@@ -12,6 +12,7 @@ package.path = package.path .. ";/disk/?.lua;/disk/?/init.lua;../?.lua"
 local log_lib  = require("lib.log")
 local index    = require("storage.index")
 local commands = require("storage.commands")
+local defrag   = require("storage.defrag")
 
 local CONFIG = {
     delivery_chest    = nil,   -- e.g. "sophisticatedstorage:chest_3" — REQUIRED
@@ -208,6 +209,23 @@ local function handleFind(chat, idx, args, user)
     sendLines(chat, user, lines)
 end
 
+local function handleDefrag(state, _args, user)
+    local chat = state.chat
+    sendLines(chat, user, { "defragmenting…" })
+    log_lib.info("defrag: starting (%d chests, %d items)",
+        #state.invs, (function() local n = 0 for _ in pairs(state.idx) do n = n + 1 end return n end)())
+    local stats = defrag.run(state.idx, state.invs)
+    -- Index now stale (slot positions shifted). Rebuild before reporting so
+    -- subsequent !give/!find see fresh state.
+    state.idx = index.build(state.invs)
+    log_lib.info("defrag: done items=%d moves=%d moved=%d slots_freed=%d",
+        stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed)
+    sendLines(chat, user, {
+        ("defrag: %d items, %d moves, %d items moved, %d slots freed"):format(
+            stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed),
+    })
+end
+
 local function handleList(chat, idx, args, user)
     local prefix = args[1]
     local limit  = tonumber(args[2]) or 20
@@ -275,6 +293,7 @@ local function chatLoop(state)
                         state.invs = discoverStorageInventories()
                         state.idx  = index.build(state.invs)
                         sendLines(state.chat, user, { "reindexed" })
+                    elseif cmd == "defrag" then handleDefrag(state, args, user)
                     elseif cmd == "help" then
                         sendLines(state.chat, user, commands.help())
                     end

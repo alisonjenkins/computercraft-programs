@@ -218,11 +218,11 @@ local function handleDefrag(state, _args, user)
     -- Index now stale (slot positions shifted). Rebuild before reporting so
     -- subsequent !give/!find see fresh state.
     state.idx = index.build(state.invs)
-    log_lib.info("defrag: done items=%d moves=%d moved=%d slots_freed=%d",
-        stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed)
+    log_lib.info("defrag: done items=%d moves=%d moved=%d slots_freed=%d sort_passes=%d",
+        stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed, stats.sort_passes or 0)
     sendLines(chat, user, {
-        ("defrag: %d items, %d moves, %d items moved, %d slots freed"):format(
-            stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed),
+        ("defrag: %d items, %d moves, %d items moved, %d slots freed (sort=%d passes)"):format(
+            stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed, stats.sort_passes or 0),
     })
 end
 

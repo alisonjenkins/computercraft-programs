@@ -20,7 +20,7 @@ function M.help()
         "!find <name...>       - fuzzy locate (multi-word AND match)",
         "!give <name...> [n]   - deliver n of best match (default 1)",
         "!reindex              - force full rescan",
-        "!defrag               - merge partial stacks, group items by chest",
+        "!defrag               - sort by volume into highest-cap chests + merge",
         "!help                 - this message",
     }
 end

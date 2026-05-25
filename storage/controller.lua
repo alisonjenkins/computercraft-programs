@@ -102,6 +102,13 @@ end
 
 local function handleGive(state, args, user)
     local chat, idx = state.chat, state.idx
+    -- Block during defrag: handleGive walks state.idx locations, but defrag
+    -- is shuffling items mid-flight. A stale (chest, slot) could push the
+    -- wrong item type or push 0 silently. Refuse until defrag finishes.
+    if state.defrag_busy then
+        sendLines(chat, user, { "defrag in progress — !give paused, retry shortly" })
+        return
+    end
     -- Last arg is the count if numeric; everything before it is the query.
     local count = 1
     local queryTokens = {}
@@ -209,21 +216,17 @@ local function handleFind(chat, idx, args, user)
     sendLines(chat, user, lines)
 end
 
+-- handleDefrag does NOT run the defrag here. It just signals defragLoop
+-- via os.queueEvent and returns immediately, so chatLoop can keep
+-- servicing !find / !list / etc. while the work runs in a parallel
+-- coroutine.
 local function handleDefrag(state, _args, user)
-    local chat = state.chat
-    sendLines(chat, user, { "defragmenting…" })
-    log_lib.info("defrag: starting (%d chests, %d items)",
-        #state.invs, (function() local n = 0 for _ in pairs(state.idx) do n = n + 1 end return n end)())
-    local stats = defrag.run(state.idx, state.invs)
-    -- Index now stale (slot positions shifted). Rebuild before reporting so
-    -- subsequent !give/!find see fresh state.
-    state.idx = index.build(state.invs)
-    log_lib.info("defrag: done items=%d moves=%d moved=%d slots_freed=%d sort_passes=%d",
-        stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed, stats.sort_passes or 0)
-    sendLines(chat, user, {
-        ("defrag: %d items, %d moves, %d items moved, %d slots freed (sort=%d passes)"):format(
-            stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed, stats.sort_passes or 0),
-    })
+    if state.defrag_busy then
+        sendLines(state.chat, user, { "defrag already running, hold on…" })
+        return
+    end
+    state.defrag_user = user
+    os.queueEvent("storage_defrag_request")
 end
 
 local function handleList(chat, idx, args, user)
@@ -317,11 +320,57 @@ local function ingestLoop(state)
     log_lib.info("ingest from %s every %ds", CONFIG.input_chest, CONFIG.ingest_period_s)
     while true do
         sleep(CONFIG.ingest_period_s)
-        local moved = ingestOnce(state.invs)
-        if moved > 0 then
-            log_lib.info("ingested %d items", moved)
-            -- Trigger reindex after ingest so !find/!give see new items quickly.
-            state.idx = index.build(state.invs)
+        if not state.defrag_busy then
+            local moved = ingestOnce(state.invs)
+            if moved > 0 then
+                log_lib.info("ingested %d items", moved)
+                -- Trigger reindex after ingest so !find/!give see new items quickly.
+                state.idx = index.build(state.invs)
+            end
+        end
+    end
+end
+
+-- Defrag runs in its own parallel branch so chatLoop keeps servicing
+-- !find/!list/!help. Pulls a "storage_defrag_request" event from
+-- handleDefrag, sets defrag_busy so concurrent !give and ingestLoop pause,
+-- runs the work yielding via sleep(0) inside defrag.run so other loops
+-- can progress between bursts of pushItems.
+local function defragLoop(state)
+    while true do
+        os.pullEvent("storage_defrag_request")
+        if state.defrag_busy then
+            -- Spurious requeue (shouldn't happen — handleDefrag guards
+            -- — but be defensive).
+        else
+            state.defrag_busy = true
+            local user = state.defrag_user
+            log_lib.info("defrag: starting (%d chests, %d items)",
+                #state.invs, (function() local n = 0 for _ in pairs(state.idx) do n = n + 1 end return n end)())
+            sendLines(state.chat, user, { "defrag: starting" })
+            local ok, stats = pcall(defrag.run, state.idx, state.invs, {
+                on_status = function(msg)
+                    log_lib.info("defrag: %s", msg)
+                    -- Don't block defrag on chat — fire and forget. The
+                    -- chat_box rate limit may drop some progress lines;
+                    -- log_lib captures the full sequence.
+                    pcall(state.chat.sendMessageToPlayer, "defrag: " .. msg, user, "storage")
+                end,
+            })
+            if ok then
+                -- Index now stale (slot positions shifted). Rebuild.
+                state.idx = index.build(state.invs)
+                log_lib.info("defrag: done items=%d moves=%d moved=%d slots_freed=%d sort_passes=%d",
+                    stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed, stats.sort_passes or 0)
+                sendLines(state.chat, user, {
+                    ("defrag done: %d items, %d moves, %d items moved, %d slots freed (sort=%d passes)"):format(
+                        stats.items_processed, stats.moves, stats.moved_count, stats.slots_freed, stats.sort_passes or 0),
+                })
+            else
+                log_lib.warn("defrag: errored: %s", tostring(stats))
+                sendLines(state.chat, user, { "defrag: errored — check log" })
+            end
+            state.defrag_busy = false
         end
     end
 end
@@ -342,10 +391,11 @@ local function run()
     log_lib.info("index built: %d distinct items", (function()
         local n = 0 ; for _ in pairs(idx) do n = n + 1 end ; return n end)())
 
-    local state = { chat = chat, idx = idx, invs = invs }
+    local state = { chat = chat, idx = idx, invs = invs, defrag_busy = false }
     parallel.waitForAny(
         function() chatLoop(state) end,
-        function() ingestLoop(state) end
+        function() ingestLoop(state) end,
+        function() defragLoop(state) end
     )
 end
 

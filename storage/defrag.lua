@@ -104,19 +104,20 @@ end
 -- through alphabetical chest order, then backward, until something
 -- accepts the stack or all chests refuse. Pass count capped at 5 so a
 -- truly full network can't loop forever.
-local function sortPass(idx, invs, stats, yieldEvery)
+local function sortPass(idx, invs, stats, yieldEvery, emit)
     local plan, chestOrder = planAssignment(idx, invs)
     if not plan then return end
     for _ in pairs(plan) do
         stats.items_processed = stats.items_processed + 1
     end
+    emit("planned " .. stats.items_processed .. " items across " .. #chestOrder .. " chests")
 
     local chestNames = {}
     for i, e in ipairs(chestOrder) do chestNames[i] = e.name end
     local chestIdxOf = {}
     for i, n in ipairs(chestNames) do chestIdxOf[n] = i end
 
-    for _ = 1, 5 do
+    for pass = 1, 5 do
         local movesThisPass = 0
         -- Iterate in alphabetical chestOrder, not invs discovery order, so
         -- items moved to earlier chests aren't re-processed within the same
@@ -154,6 +155,7 @@ local function sortPass(idx, invs, stats, yieldEvery)
             if i % yieldEvery == 0 then sleep(0) end
         end
         stats.sort_passes = (stats.sort_passes or 0) + 1
+        emit(("sort pass %d: %d moves"):format(pass, movesThisPass))
         if movesThisPass == 0 then break end
     end
 end
@@ -203,6 +205,7 @@ end
 function M.run(idx, invs, opts)
     opts = opts or {}
     local yieldEvery = opts.yield_every or 8
+    local emit = opts.on_status or function(_msg) end
     local stats = {
         items_processed = 0,
         moves           = 0,
@@ -210,8 +213,12 @@ function M.run(idx, invs, opts)
         slots_freed     = 0,
         sort_passes     = 0,
     }
-    sortPass(idx, invs, stats, yieldEvery)
+    emit("sort start")
+    sortPass(idx, invs, stats, yieldEvery, emit)
+    local sortMoves = stats.moves
+    emit("merge start")
     mergePass(invs, stats, yieldEvery)
+    emit(("merge done: %d moves"):format(stats.moves - sortMoves))
     return stats
 end
 

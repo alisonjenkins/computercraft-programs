@@ -109,19 +109,107 @@ local function classify(name)
     then return "smelt" end
     return nil
 end
-
-local function discoverMachines()
-    local pools = { food = {}, blast = {}, smelt = {} }
-    for _, p in ipairs({ peripheral.find("minecraft:smoker") }) do
-        pools.food[#pools.food + 1] = p
+-- Helper function to check if a machine can accept an item of a given category
+local function canAccept(machine, category)
+    if not machine then return false end
+    local mType = peripheral.getType(peripheral.getName(machine))
+    if (category == "food" and mType == "minecraft:smoker") or
+       (category == "blast" and mType == "minecraft:blast_furnace") or
+       (category == "smelt" and mType == "minecraft:furnace") then
+        return true
     end
+    return false
+end
+
+-- Distribute fresh items from the chest into idle machines of the right category.
+local function distributeInputs(chest, chestName, pools)
+    for slot, item in pairs(chest.list()) do
+        if FUELS[item.name] then
+            goto continue_loop -- Skip fuels; they are handled during refuel later.
+        else
+            local cat = classify(item.name)
+            if not cat then goto continue_loop end
+
+            -- Try to distribute this item across all matching machines until full or out of items
+            for _, machine in ipairs(pools[cat] or {}) do
+                local inv = machine.list()
+                -- If the input slot is available and we haven't hit batch size, push it.
+                if not inv[1] or inv[1].count < CONFIG.batch_size then
+                    chest.pushItems(peripheral.getName(machine), slot, 1, 1)
+                    break -- Move to the next item in the chest list
+                end
+            end
+        end
+        ::continue_loop::
+    end
+end
+
+-- Manage one machine: pull output, refuel if low, top up input if empty.
+local function manage(machine, chest, chestName)
+    local mName = peripheral.getName(machine)
+    local inv   = machine.list()
+    
+    -- 1. Output -> chest
+    if inv[3] then machine.pushItems(chestName, 3) end
+
+    -- 2. Refuel slot 2 if low (Uses general fuel search in chest)
+    if not inv[2] or inv[2].count < CONFIG.refuel_below then
+        local success, desiredFuel = determineFuelSource(chest)
+
+        if success and desiredFuel then
+            -- Attempt to push the determined fuel source (charcoal or primary fuel)
+            for slot, item in pairs(chest.list()) do
+                -- Check if the item matches the desired fuel OR if it is a primary fuel that was found first.
+                if (desiredFuel == "minecraft:charcoal" and item.name == "minecraft:charcoal") or 
+                   (FUELS[item.name] and item.name ~= "minecraft:charcoal") then
+                    -- Found the appropriate fuel, push it!
+                    chest.pushItems(mName, slot, CONFIG.refuel_amount, 2)
+                    break
+                end
+            end
+        end
+    end
+
+    -- 3. Top up input slot 1 to at most batch_size.
+    if inv[1] and inv[1].count >= CONFIG.batch_size then return end
+
+    local mType = peripheral.getType(mName)
+    local desiredCategory = ""
+    if mType == "minecraft:smoker" then desiredCategory = "food"
+    elseif mType == "minecraft:blast_furnace" then desiredCategory = "blast"
+    else desiredCategory = "smelt" end
+
+    -- Check if the item that was pushed (or is there) belongs to this machine's category.
+    -- This relies on distributeInputs having already done its job for the current cycle.
+    if inv[1] and not SMELTED_OUTPUTS[inv[1].name] then 
+        -- If slot 1 has an item, we assume it was placed there by the distribution logic
+        -- in this cycle, so no action is needed here other than running the machine's process.
+    else
+        -- The input slot is empty or contains garbage; we can skip complex refilling logic
+        -- since distributeInputs should have handled that for all machines in bulk.
+        return 
+    end
+end
+
+-- Loop through all found machines to execute their tasks (output/refuel).
+local function processAllMachines(chest, chestName, pools)
+    for name, machines in pairs(pools) do
+        for _, machine in ipairs(machines) do
+            manage(machine, chest, chestName)
+        end
+    end
+end
+
+print("Smelter online. chest=" .. CONFIG.chest)
+
+
     for _, p in ipairs({ peripheral.find("minecraft:blast_furnace") }) do
         pools.blast[#pools.blast + 1] = p
     end
     for _, p in ipairs({ peripheral.find("minecraft:furnace") }) do
         pools.smelt[#pools.smelt + 1] = p
     end
-    return pools
+    return { smokeres = {}, blastfurnaces = {}, furnaces = {} }
 end
 
 -- Pick a machine for `category`. Falls back to regular furnace if the

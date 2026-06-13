@@ -25,6 +25,7 @@ local CONFIG = {
     chest         = settings.get("smelter_chest"),
     refuel_below  = 8,    -- refill fuel slot when count drops below this
     refuel_amount = 8,    -- push this many fuel items per refill
+    batch_size    = 8,    -- max items buffered per machine input slot (1 coal ~ 8 smelts)
     sleep_s       = 1,
 }
 
@@ -157,7 +158,9 @@ local function manage(machine, chest, chestName)
         end
     end
 
-    -- 3. Top up input slot 1
+    -- 3. Top up input slot 1 to at most batch_size. Capping the per-machine
+    -- buffer (instead of grabbing a full 64-stack) lets the per-machine loop
+    -- spread items across every machine, so all run in parallel.
     if not inv[1] then
         -- Find an item from the chest that this machine accepts.
         local mType = peripheral.getType(mName)
@@ -169,16 +172,16 @@ local function manage(machine, chest, chestName)
             if not FUELS[item.name] then
                 local cat = classify(item.name)
                 if cat == wantCategory or (wantCategory == "smelt" and cat) then
-                    chest.pushItems(mName, slot, 64, 1)
+                    chest.pushItems(mName, slot, CONFIG.batch_size, 1)
                     break
                 end
             end
         end
-    elseif inv[1].count < 64 then
-        -- Top off existing stack
+    elseif inv[1].count < CONFIG.batch_size then
+        -- Top existing stack back up to batch_size
         for slot, item in pairs(chest.list()) do
             if item.name == inv[1].name then
-                chest.pushItems(mName, slot, 64 - inv[1].count, 1)
+                chest.pushItems(mName, slot, CONFIG.batch_size - inv[1].count, 1)
             end
         end
     end
